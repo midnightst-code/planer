@@ -671,6 +671,7 @@ async function start(){
   autoImportFromCalendar();
   rolloverUnfinishedTasks();
   runSchedules();
+  syncToCalendar();
   renderRecur();renderDayTasks();renderTodayHabits();renderGoals();
 }
 
@@ -786,7 +787,7 @@ function renderRecur(){
     ck.onclick=()=>{r.done=!r.done;sv();renderRecur();updProg();};
     const inp=document.createElement('input');inp.className='tt'+(r.done?' done':'');
     inp.value=r.text||'';inp.placeholder='Повторяющаяся задача...';
-    inp.oninput=()=>{r.text=inp.value;sv();};
+    inp.oninput=()=>{r.text=inp.value;sv();syncRecurringToCalendar();};
     const ti2=document.createElement('input');ti2.className='ti';ti2.value=r.time||'';ti2.placeholder='мин';
     ti2.oninput=()=>{r.time=ti2.value;sv();};
     const pd=document.createElement('div');pd.className=`pd p${r.pri||0}`;pd.title='Приоритет';
@@ -1441,7 +1442,7 @@ function runSchedules(){
   const existingTexts = new Set(tasks.map(t=>t.text).filter(Boolean));
   let added = 0;
   scheds.forEach(s=>{
-    if(s.lastAdded===TK) return; // уже добавляли сегодня
+    if(s.lastAdded===TK) return;
     if(!shouldRunToday(s)) return;
     if(!existingTexts.has(s.name)){
       tasks.push({text:s.name, done:false, pri:s.pri||0, time:'', fromSched:true});
@@ -1457,6 +1458,91 @@ function runSchedules(){
     msg.classList.add('show');
     setTimeout(()=>msg.classList.remove('show'),5000);
   }
+  // Синхронизируем расписания в календарь
+  syncSchedulesToCalendar();
+}
+
+// ═══ СИНХРОНИЗАЦИЯ В КАЛЕНДАРЬ ═══
+// Проставляет повторяющиеся задачи и расписания в calEvents на 60 дней вперёд
+function syncToCalendar(){
+  syncRecurringToCalendar();
+  syncSchedulesToCalendar();
+}
+
+function syncRecurringToCalendar(){
+  // Берём повторяющиеся задачи сегодняшнего дня
+  const recur = D.days[TK]?.recur || [];
+  if(!recur.length) return;
+
+  // Проставляем на 60 дней вперёд
+  for(let d=0; d<=60; d++){
+    const date = addD(today, d);
+    const dk = fk(date);
+    if(!D.calEvents[dk]) D.calEvents[dk] = [];
+
+    recur.forEach(r=>{
+      if(!r.text) return;
+      // Проверяем нет ли уже такой задачи в этот день (чтобы не дублировать)
+      const exists = D.calEvents[dk].some(ev=>ev.text===r.text && ev.fromRecur);
+      if(!exists){
+        D.calEvents[dk].push({
+          text: r.text,
+          done: false,
+          pri: r.pri||0,
+          fromRecur: true  // метка чтобы знать откуда
+        });
+      }
+    });
+  }
+}
+
+function syncSchedulesToCalendar(){
+  const scheds = getSchedules();
+  if(!scheds.length) return;
+
+  // Проставляем на 60 дней вперёд
+  for(let d=0; d<=60; d++){
+    const date = addD(today, d);
+    const dk = fk(date);
+
+    scheds.forEach(s=>{
+      // Проверяем должна ли эта задача быть в этот день
+      if(!shouldRunOnDate(s, date)) return;
+      if(!D.calEvents[dk]) D.calEvents[dk] = [];
+      // Не дублируем
+      const exists = D.calEvents[dk].some(ev=>ev.text===s.name && ev.fromSched);
+      if(!exists){
+        D.calEvents[dk].push({
+          text: s.name,
+          done: false,
+          pri: s.pri||0,
+          fromSched: true
+        });
+      }
+    });
+  }
+}
+
+// Как shouldRunToday но для произвольной даты
+function shouldRunOnDate(sched, date){
+  const freq = sched.freq;
+  const start = sched.startDate ? new Date(sched.startDate) : today;
+  start.setHours(0,0,0,0);
+  const d = new Date(date); d.setHours(0,0,0,0);
+  if(d < start) return false;
+  if(freq==='daily') return true;
+  if(freq==='weekly') return d.getDay()===parseInt(sched.weekday||1);
+  if(freq==='biweekly'){
+    const diff=Math.round((d-start)/(1000*60*60*24));
+    return diff>=0 && diff%14===0 && d.getDay()===parseInt(sched.weekday||1);
+  }
+  if(freq==='monthly') return d.getDate()===parseInt(sched.monthday||1);
+  if(freq==='custom'){
+    const n=parseInt(sched.customDays||1);
+    const diff=Math.round((d-start)/(1000*60*60*24));
+    return diff>=0 && diff%n===0;
+  }
+  return false;
 }
 
 // ── Modal UI ──
@@ -1531,7 +1617,7 @@ function saveSched(){
   else scheds.push(sched);
   sv(); renderSchedList(); resetSchedForm();
   // Сразу проверяем — вдруг надо добавить на сегодня
-  runSchedules(); renderDayTasks(); updProg();
+  runSchedules(); syncToCalendar(); renderDayTasks(); updProg();
 }
 
 function renderSchedList(){
