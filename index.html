@@ -307,9 +307,9 @@ body{font-family:var(--font-b);background:var(--gray-l);color:var(--txt);font-si
           <div class="qr"><textarea class="qi" id="win3" rows="1" oninput="sv();ar(this)" placeholder="3. ..."></textarea></div>
         </div>
       </div>
-      <div style="text-align:right;">
-        <button class="btn btn-p" onclick="finishDay()">Завершить день →</button>
-      </div>
+        <div style="font-size:11px;color:var(--gray-d);font-style:italic;text-align:right;padding:4px 0;">
+          Выполненные задачи автоматически архивируются при открытии следующего дня
+        </div>
     </div>
   </div>
 </div>
@@ -668,6 +668,7 @@ async function start(){
   ['sMood','sEnergy','sSleep'].forEach(id=>{const el=document.getElementById(id);if(el){el.value=dd[id]||'5';}});
   ustate();
   ['cq1','cq2','cq3','cq4'].forEach(id=>{const el=document.getElementById(id);if(el){el.value=(D.qcoach||{})[id]||'';setTimeout(()=>ar(el),0);}});
+  autoArchivePastDays();
   autoImportFromCalendar();
   rolloverUnfinishedTasks();
   runSchedules();
@@ -961,18 +962,46 @@ function updProg(){
 }
 
 // ═══ FINISH DAY → ARCHIVE ═══
-function finishDay(){
-  if(!confirm('Завершить день? Выполненные задачи уйдут в архив.'))return;
-  const recur=getRecur();const tasks=getDayTasks();
-  const done=[...recur.filter(t=>t.text&&t.done),...tasks.filter(t=>t.text&&t.done)];
-  if(!D.archive)D.archive={};
-  if(!D.archive[TK])D.archive[TK]=[];
-  done.forEach(t=>D.archive[TK].push(t.text));
-  // Remove done from floating tasks
-  D.days[TK].tasks=tasks.filter(t=>!t.done);
-  recur.forEach(r=>{r.done=false;});
-  sv();renderDayTasks();renderRecur();updProg();
-  alert(`День завершён! ${done.length} задач перенесено в архив.`);
+// ═══ АВТОАРХИВ ПРОШЛЫХ ДНЕЙ ═══
+// Запускается при открытии планера — архивирует выполненные задачи за все прошлые дни
+function autoArchivePastDays(){
+  if(!D.days) return;
+  let totalArchived = 0;
+
+  Object.keys(D.days).forEach(dk=>{
+    if(dk >= TK) return; // пропускаем сегодня и будущее
+    const dayData = D.days[dk];
+    if(!dayData) return;
+
+    const tasks = dayData.tasks || [];
+    const recur = dayData.recur || [];
+    const doneTasks = tasks.filter(t=>t.text && t.done);
+    const doneRecur = recur.filter(r=>r.text && r.done);
+    const allDone = [...doneTasks, ...doneRecur];
+
+    if(allDone.length === 0) return;
+
+    // Добавляем в архив
+    if(!D.archive) D.archive = {};
+    if(!D.archive[dk]) D.archive[dk] = [];
+
+    allDone.forEach(t=>{
+      // Не дублируем если уже есть в архиве
+      if(!D.archive[dk].includes(t.text)){
+        D.archive[dk].push(t.text);
+        totalArchived++;
+      }
+    });
+
+    // Убираем выполненные из плавающих задач
+    dayData.tasks = tasks.filter(t=>!t.done);
+    // Сбрасываем чекбоксы повторяющихся (они повторяются каждый день)
+    recur.forEach(r=>{ r.done = false; });
+  });
+
+  if(totalArchived > 0){
+    sv();
+  }
 }
 
 // ═══ TODAY HABITS ═══
@@ -1470,27 +1499,18 @@ function syncToCalendar(){
 }
 
 function syncRecurringToCalendar(){
-  // Берём повторяющиеся задачи сегодняшнего дня
   const recur = D.days[TK]?.recur || [];
   if(!recur.length) return;
-
-  // Проставляем на 60 дней вперёд
-  for(let d=0; d<=60; d++){
+  // Только 7 дней вперёд — меньше данных, нет ошибок синхронизации
+  for(let d=0; d<=7; d++){
     const date = addD(today, d);
     const dk = fk(date);
     if(!D.calEvents[dk]) D.calEvents[dk] = [];
-
     recur.forEach(r=>{
       if(!r.text) return;
-      // Проверяем нет ли уже такой задачи в этот день (чтобы не дублировать)
       const exists = D.calEvents[dk].some(ev=>ev.text===r.text && ev.fromRecur);
       if(!exists){
-        D.calEvents[dk].push({
-          text: r.text,
-          done: false,
-          pri: r.pri||0,
-          fromRecur: true  // метка чтобы знать откуда
-        });
+        D.calEvents[dk].push({text:r.text, done:false, pri:r.pri||0, fromRecur:true});
       }
     });
   }
