@@ -669,6 +669,7 @@ async function start(){
   ustate();
   ['cq1','cq2','cq3','cq4'].forEach(id=>{const el=document.getElementById(id);if(el){el.value=(D.qcoach||{})[id]||'';setTimeout(()=>ar(el),0);}});
   autoArchivePastDays();
+  cleanCalendarJunk();
   autoImportFromCalendar();
   rolloverUnfinishedTasks();
   runSchedules();
@@ -962,6 +963,22 @@ function updProg(){
 }
 
 // ═══ FINISH DAY → ARCHIVE ═══
+// ═══ ОЧИСТКА МУСОРА В КАЛЕНДАРЕ ═══
+// Удаляет все fromRecur и fromSched события — они будут пересозданы правильно
+function cleanCalendarJunk(){
+  if(!D.calEvents) return;
+  let cleaned = false;
+  Object.keys(D.calEvents).forEach(dk=>{
+    const before = D.calEvents[dk].length;
+    // Оставляем только вручную добавленные события (без fromRecur и fromSched)
+    D.calEvents[dk] = D.calEvents[dk].filter(ev => !ev.fromRecur && !ev.fromSched);
+    if(D.calEvents[dk].length !== before) cleaned = true;
+    // Удаляем пустые дни
+    if(D.calEvents[dk].length === 0) delete D.calEvents[dk];
+  });
+  if(cleaned) sv();
+}
+
 // ═══ АВТОАРХИВ ПРОШЛЫХ ДНЕЙ ═══
 // Запускается при открытии планера — архивирует выполненные задачи за все прошлые дни
 function autoArchivePastDays(){
