@@ -597,6 +597,9 @@ function showSv(cls, text){
 
 async function pushCloud(data){
   if(!JSONBIN_KEY){ showSv('local','Сохранено ✓'); return; }
+  // Ставим метку времени перед отправкой
+  data._savedAt = Date.now();
+  localStorage.setItem('plannerV2', JSON.stringify(data));
   showSv('syncing','Синхронизация...');
   try{
     if(!BIN_ID){
@@ -649,19 +652,41 @@ function sv(){
   ['rm1','rm2','rm3','rm4','rm5'].forEach(id=>{const el=document.getElementById(id);if(el)D.resRef[rmk][id]=el.value;});
   localStorage.setItem('plannerV2',JSON.stringify(D));
   clearTimeout(syncTimer);
-  syncTimer=setTimeout(()=>pushCloud(D),2000);
+  syncTimer=setTimeout(()=>pushCloud(D),500);
   if(!JSONBIN_KEY) showSv('local','Сохранено ✓');
 }
 
 // ═══ INIT ═══
 async function start(){
   document.getElementById('topDate').textContent=`${DOWF[today.getDay()]}, ${today.getDate()} ${MRGEN[today.getMonth()]} ${today.getFullYear()}`;
+
   if(JSONBIN_KEY&&BIN_ID){
     showSv('syncing','Загрузка из облака...');
-    const cloud=await pullCloud();
-    if(cloud){ D=cloud; localStorage.setItem('plannerV2',JSON.stringify(D)); showSv('synced','Данные загружены ✓'); }
-    else showSv('local','Работаем офлайн');
+    const cloud = await pullCloud();
+    const local = loadLocal();
+
+    if(cloud){
+      const cloudTime = cloud._savedAt || 0;
+      const localTime = local._savedAt || 0;
+
+      if(cloudTime >= localTime){
+        // Облако новее или одинаково — берём облако
+        D = cloud;
+        localStorage.setItem('plannerV2', JSON.stringify(D));
+        showSv('synced','Данные загружены ✓');
+      } else {
+        // Локальные данные новее — берём их и сразу пушим в облако
+        D = local;
+        showSv('syncing','Локальные данные новее — синхронизирую...');
+        await pushCloud(D);
+      }
+    } else {
+      // Облако недоступно — работаем локально
+      D = local;
+      showSv('local','Работаем офлайн');
+    }
   }
+
   const dd=D.days[TK]||{};
   ['q1','q2','q3','e1','e2','e3','e4','win1','win2','win3'].forEach(id=>{const el=document.getElementById(id);if(el){el.value=dd[id]||'';setTimeout(()=>ar(el),0);}});
   document.getElementById('weekGoal').value=D.weekGoal||'';
@@ -1779,6 +1804,21 @@ function clearSyncKey(){
 // Закрыть по клику на фон
 document.getElementById('settingsModal').addEventListener('click',function(e){
   if(e.target===this) closeSettings();
+});
+
+// Сохраняем при закрытии вкладки
+window.addEventListener('beforeunload', ()=>{
+  clearTimeout(syncTimer);
+  if(JSONBIN_KEY && BIN_ID){
+    D._savedAt = Date.now();
+    localStorage.setItem('plannerV2', JSON.stringify(D));
+    // Синхронный запрос при закрытии (sendBeacon надёжнее fetch)
+    const blob = new Blob([JSON.stringify(D)], {type:'application/json'});
+    navigator.sendBeacon(
+      `https://api.jsonbin.io/v3/b/${BIN_ID}`,
+      blob
+    );
+  }
 });
 
 start();
