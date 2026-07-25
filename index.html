@@ -1507,20 +1507,42 @@ function renderWeekView(container){
       el.ondragstart=e2=>{e2.dataTransfer.setData('type','cal');e2.dataTransfer.setData('ei',ei);e2.dataTransfer.setData('fd',dk);};
       const dot=document.createElement('div');dot.className='wtd';
       dot.style.background=['#cac1ae','#c62828','#c8a96e','#a1b8a6'][ev.pri||0];
+      const ti=document.createElement('input');ti.className='ti';ti.value=ev.time||'';
+      ti.title='Время (например: 14:30) для уведомлений';
+      applyTimeStyle(ti, ev.time);
+      ti.oninput=()=>{
+        ev.time=ti.value;
+        applyTimeStyle(ti, ev.time);
+        if(D.days[dk] && D.days[dk].tasks){
+          const dt = D.days[dk].tasks.find(t=>t.text===ev.text);
+          if(dt) dt.time = ev.time;
+        }
+        sv();
+      };
+      ti.onblur=()=>{ ev.time=ti.value; applyTimeStyle(ti, ev.time); sv(); flushSave(); };
+      ti.onchange=()=>{ ev.time=ti.value; applyTimeStyle(ti, ev.time); sv(); flushSave(); };
+
       const inp=document.createElement('input');inp.className='wti';inp.value=ev.text||'';inp.placeholder='Задача...';
-      inp.oninput=()=>{ev.text=inp.value;sv();};
+      inp.oninput=()=>{
+        const oldText = ev.text;
+        ev.text=inp.value;
+        if(D.days[dk] && D.days[dk].tasks){
+          const dt = D.days[dk].tasks.find(t=>t.text===oldText);
+          if(dt) dt.text = ev.text;
+        }
+        sv();
+      };
       const ck=document.createElement('div');ck.className='ck'+(ev.done?' on':'');
       ck.style.cssText='width:14px;height:14px;flex-shrink:0;';
       ck.onclick=()=>{ev.done=!ev.done;sv();renderCal();autoImportFromCalendar();};
       const del=document.createElement('span');del.style.cssText='font-size:12px;color:var(--gray-d);cursor:pointer;margin-left:2px;flex-shrink:0;';del.textContent='×';
       del.onclick=()=>{D.calEvents[dk].splice(ei,1);sv();renderCal();};
-      el.append(dot,inp,ck,del);body.appendChild(el);
+      el.append(dot,ti,inp,ck,del);body.appendChild(el);
     });
     const ab=document.createElement('div');ab.style.cssText='font-size:10px;color:var(--gray-d);cursor:pointer;padding:4px 0;';ab.textContent='+ задача';
     ab.onclick=()=>{
       if(!D.calEvents[dk])D.calEvents[dk]=[];
-      D.calEvents[dk].push({text:'',done:false,pri:0});sv();renderCal();
-      // focus last input after render
+      D.calEvents[dk].push({text:'',done:false,pri:0,time:''});sv();renderCal();
       setTimeout(()=>{const ins=body.querySelectorAll('.wti');if(ins.length)ins[ins.length-1].focus();},50);
     };
     body.appendChild(ab);col.appendChild(body);grid.appendChild(col);
@@ -1551,6 +1573,12 @@ function renderMonthsView(container){
       const dot=document.createElement('span');dot.style.cssText='width:6px;height:6px;border-radius:50%;flex-shrink:0;display:inline-block;';
       dot.style.background=['#cac1ae','#c62828','#c8a96e','#a1b8a6'][ev.pri||0];
       el.appendChild(dot);
+      if(ev.time && ev.time.trim() && ev.time.trim() !== '00:00'){
+        const tm=document.createElement('span');
+        tm.style.cssText='font-size:9px;background:var(--olive-d);color:#fff;padding:1px 3px;border-radius:3px;font-weight:600;margin:0 3px 0 2px;flex-shrink:0;';
+        tm.textContent=ev.time;
+        el.appendChild(tm);
+      }
       const t=document.createElement('span');t.textContent=' '+ev.text;t.style.flex='1';
       el.appendChild(t);
       cell.appendChild(el);
@@ -1567,8 +1595,9 @@ function renderMonthsView(container){
     const add=document.createElement('div');add.className='cadd';add.textContent='+ добавить';
     add.onclick=()=>{
       const txt=prompt(`Задача или событие на ${d} ${MRGEN[m]}:`);if(!txt)return;
+      const tm=prompt(`Укажите время задачи (например: 14:30, или оставьте пустым):`, '');
       if(!D.calEvents[dk])D.calEvents[dk]=[];
-      D.calEvents[dk].push({text:txt,done:false,pri:0,type:'event'});sv();renderCal();
+      D.calEvents[dk].push({text:txt,done:false,pri:0,time:(tm||'').trim(),type:'event'});sv();renderCal();
     };
     cell.appendChild(add);grid.appendChild(cell);
   }
@@ -1905,9 +1934,13 @@ function syncDayTasksToCalendar(){
     if(!D.calEvents[dk]) D.calEvents[dk] = [];
     dayTasks.forEach(t => {
       if(!t.text) return;
-      const exists = D.calEvents[dk].some(ev => ev.text === t.text);
-      if(!exists){
-        D.calEvents[dk].push({ text: t.text, done: t.done || false, pri: t.pri || 0, fromDayTask: true });
+      const existingEv = D.calEvents[dk].find(ev => ev.text === t.text);
+      if(existingEv){
+        existingEv.done = t.done || false;
+        existingEv.pri = t.pri || 0;
+        if(t.time) existingEv.time = t.time;
+      } else {
+        D.calEvents[dk].push({ text: t.text, done: t.done || false, pri: t.pri || 0, time: t.time || '', fromDayTask: true });
       }
     });
   });
