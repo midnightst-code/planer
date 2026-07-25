@@ -628,12 +628,22 @@ let syncTimer = null;
 
 async function checkCloudSync(){
   if(!JSONBIN_KEY||!BIN_ID||isCheckingCloud) return;
+  const active = document.activeElement;
+  if(active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return;
   isCheckingCloud = true;
   try {
     const cloud = await pullCloud();
     const localSavedAt = D._savedAt || 0;
     const cloudSavedAt = cloud ? (cloud._savedAt || 0) : 0;
     if(cloud && cloudSavedAt > localSavedAt){
+      harvestTaskInputs();
+      const localTasks = getDayTasks();
+      const cloudTasks = cloud.days && cloud.days[TK] ? cloud.days[TK].tasks || [] : [];
+      cloudTasks.forEach((ct, i) => {
+        if((!ct.text || !ct.text.trim()) && localTasks[i] && localTasks[i].text && localTasks[i].text.trim()){
+          ct.text = localTasks[i].text;
+        }
+      });
       D = cloud;
       localStorage.setItem('plannerV2', JSON.stringify(D));
       refreshUIFromData();
@@ -646,11 +656,12 @@ async function checkCloudSync(){
 }
 
 function flushSave(){
+  harvestTaskInputs();
   if(syncTimer){
     clearTimeout(syncTimer);
     syncTimer = null;
-    pushCloud(D);
   }
+  pushCloud(D);
 }
 
 let isCheckingCloud = false;
@@ -818,7 +829,19 @@ function initData(){return{weekGoal:'',habits:DEFHAB.slice(),habData:{},healthDa
 function loadLocal(){try{return JSON.parse(localStorage.getItem('plannerV2')||'null')||initData();}catch{return initData();}}
 let D=loadLocal();
 
+function harvestTaskInputs(){
+  const dayTaskRows = document.querySelectorAll('#dayTasks .tr2');
+  const tasks = getDayTasks();
+  dayTaskRows.forEach((row, i) => {
+    const inp = row.querySelector('.tt');
+    const ti = row.querySelector('.ti');
+    if(inp && tasks[i]) tasks[i].text = inp.value;
+    if(ti && tasks[i]) tasks[i].time = ti.value;
+  });
+}
+
 function sv(){
+  harvestTaskInputs();
   const dk=TK;
   if(!D.days[dk])D.days[dk]={};
   ['q1','q2','q3','e1','e2','e3','e4','win1','win2','win3'].forEach(id=>{const el=document.getElementById(id);if(el)D.days[dk][id]=el.value;});
@@ -1059,8 +1082,13 @@ function renderDayTasks(){
     ck.onclick=()=>{t.done=!t.done;sv();renderDayTasks();updProg();};
     const inp=document.createElement('input');inp.className='tt'+(t.done?' done':'');inp.value=t.text||'';inp.placeholder='Задача...';
     inp.oninput=()=>{t.text=inp.value;sv();};
+    inp.onblur=()=>{t.text=inp.value;sv();flushSave();};
+    inp.onchange=()=>{t.text=inp.value;sv();flushSave();};
     const ti=document.createElement('input');ti.className='ti';ti.value=t.time||'';ti.placeholder='мин';
     ti.oninput=()=>{t.time=ti.value;sv();};
+    ti.onblur=()=>{t.time=ti.value;sv();flushSave();};
+    ti.onchange=()=>{t.time=ti.value;sv();flushSave();};
+
     const pd=document.createElement('div');pd.className=`pd p${t.pri||0}`;
     pd.title='Нажми для смены приоритета';
     pd.onclick=()=>{t.pri=((t.pri||0)+1)%4;sv();renderDayTasks();};
@@ -1158,7 +1186,11 @@ function moveAllUnfinishedToTomorrow(){
 }
 
 function addTask(){
-  getDayTasks().push({text:'',done:false,pri:0,time:''});sv();renderDayTasks();
+  getDayTasks().push({text:'',done:false,pri:0,time:''});
+  harvestTaskInputs();
+  D._savedAt = Date.now();
+  localStorage.setItem('plannerV2', JSON.stringify(D));
+  renderDayTasks();
   setTimeout(()=>{const ins=document.querySelectorAll('#dayTasks .tt');if(ins.length)ins[ins.length-1].focus();},50);
 }
 
