@@ -221,13 +221,13 @@ body{font-family:var(--font-b);background:var(--gray-l);color:var(--txt);font-si
   <div class="logo">Мой планер</div>
   <div class="topbar-right">
     <span class="saved" id="sv">Сохранено ✓</span>
+    <button onclick="openNotifModal()" style="background:rgba(255,255,255,.12);border:none;color:var(--sage-l);font-size:13px;padding:5px 10px;border-radius:6px;cursor:pointer;font-family:var(--font-b);" title="Настройки уведомлений">🔔 Уведомления</button>
     <button onclick="openSettings()" style="background:rgba(255,255,255,.12);border:none;color:var(--sage-l);font-size:13px;padding:5px 10px;border-radius:6px;cursor:pointer;font-family:var(--font-b);" title="Настройки синхронизации">⚙ Синхронизация</button>
     <div class="topdate" id="topDate"></div>
   </div>
 </div>
 <div class="tabs">
   <button class="tab on"  onclick="go('day',this)">День</button>
-  <button class="tab" onclick="go('cal',this)">Календарь</button>
   <button class="tab" onclick="go('hab',this)">Привычки</button>
   <button class="tab" onclick="go('res',this)">Итоги</button>
   <button class="tab" onclick="go('q',this)">Квартал</button>
@@ -271,14 +271,17 @@ body{font-family:var(--font-b);background:var(--gray-l);color:var(--txt);font-si
       <div class="card">
         <div class="ch"><span class="cht">✅ Задачи</span><span id="dayProg" style="font-size:11px;color:var(--olive-d);font-weight:500;">0 / 0</span></div>
         <div class="cb2">
-          <div class="tsh"><span></span><span>Задача</span><span>мин</span><span>!</span><span></span></div>
+          <div class="tsh" style="grid-template-columns:16px 22px 1fr 44px 22px 20px 20px 24px;"><span></span><span>Задача</span><span>мин</span><span>!</span><span></span><span></span><span></span></div>
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
             <div style="font-size:10px;color:var(--olive-d);font-weight:500;letter-spacing:.04em;">🔁 ПОВТОРЯЮЩИЕСЯ</div>
             <button onclick="openSchedModal()" style="font-size:10px;color:var(--mocha);background:none;border:none;cursor:pointer;font-family:var(--font-b);padding:0;opacity:.7;" title="Управление расписаниями">⚙ расписания</button>
           </div>
           <div id="recurTasks"></div>
           <hr class="sep">
-          <div style="font-size:10px;color:var(--gray-d);margin-bottom:4px;font-weight:500;letter-spacing:.04em;">ЗАДАЧИ ДНЯ</div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+            <div style="font-size:10px;color:var(--gray-d);font-weight:500;letter-spacing:.04em;">ЗАДАЧИ ДНЯ</div>
+            <button onclick="moveAllUnfinishedToTomorrow()" style="font-size:10px;color:var(--olive-d);background:none;border:none;cursor:pointer;font-family:var(--font-b);padding:0;opacity:.85;" title="Перенести невыполненные задачи на завтра">➡️ все невыполненные на завтра</button>
+          </div>
           <div id="dayTasks"></div>
           <button class="addbtn" onclick="addTask()">+ добавить задачу</button>
           <div class="pw"><div class="pb"><div class="pf" id="progFill" style="width:0%"></div></div><div class="pl" id="progLbl">0 из 0 · 0%</div></div>
@@ -312,23 +315,23 @@ body{font-family:var(--font-b);background:var(--gray-l);color:var(--txt);font-si
         </div>
     </div>
   </div>
-</div>
 
-<!-- ── КАЛЕНДАРЬ (включает вид недели) ── -->
-<div class="panel" id="panel-cal">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
-    <div style="font-family:var(--font-s);font-size:20px;color:var(--olive-d);" id="calTitle"></div>
-    <div class="fr">
-      <div style="display:flex;border:.5px solid var(--beige);border-radius:var(--rsm);overflow:hidden;">
-        <button id="btnWeekView" style="padding:6px 14px;font-size:11px;font-weight:500;background:var(--olive-d);color:#fff;border:none;cursor:pointer;font-family:var(--font-b);" onclick="setCalView('week')">Неделя</button>
-        <button id="btnMonthView" style="padding:6px 14px;font-size:11px;font-weight:500;background:#fff;color:var(--txt-m);border:none;cursor:pointer;font-family:var(--font-b);" onclick="setCalView('month')">Месяц</button>
+  <!-- ── КАЛЕНДАРЬ (Неделя / Месяц) ── -->
+  <div class="card" style="margin-top:16px;padding:16px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+      <div style="font-family:var(--font-s);font-size:20px;color:var(--olive-d);" id="calTitle"></div>
+      <div class="fr">
+        <div style="display:flex;border:.5px solid var(--beige);border-radius:var(--rsm);overflow:hidden;">
+          <button id="btnWeekView" style="padding:6px 14px;font-size:11px;font-weight:500;background:var(--olive-d);color:#fff;border:none;cursor:pointer;font-family:var(--font-b);" onclick="setCalView('week')">Неделя</button>
+          <button id="btnMonthView" style="padding:6px 14px;font-size:11px;font-weight:500;background:#fff;color:var(--txt-m);border:none;cursor:pointer;font-family:var(--font-b);" onclick="setCalView('month')">Месяц</button>
+        </div>
+        <button class="btn" onclick="calPrev()">← Пред.</button>
+        <button class="btn" onclick="calToday()">Сегодня</button>
+        <button class="btn" onclick="calNext()">След. →</button>
       </div>
-      <button class="btn" onclick="calPrev()">← Пред.</button>
-      <button class="btn" onclick="calToday()">Сегодня</button>
-      <button class="btn" onclick="calNext()">След. →</button>
     </div>
+    <div id="calCont"></div>
   </div>
-  <div id="calCont"></div>
 </div>
 
 <!-- ── ПРИВЫЧКИ ── -->
@@ -565,6 +568,41 @@ body{font-family:var(--font-b);background:var(--gray-l);color:var(--txt);font-si
   </div>
 </div>
 
+<!-- ── НАСТРОЙКИ УВЕДОМЛЕНИЙ ── -->
+<div id="notifModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:14px;padding:28px;max-width:460px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.2);">
+    <div style="font-family:'Cormorant Garamond',serif;font-size:22px;color:var(--olive-d);margin-bottom:6px;">🔔 Уведомления и напоминания</div>
+    <div style="font-size:13px;color:var(--txt-m);margin-bottom:16px;line-height:1.6;">
+      Планер пришлет вам системное уведомление точно в указанный час задачи и за несколько минут/часов до неё.
+    </div>
+
+    <div style="background:var(--gray-l);border-radius:10px;padding:14px;margin-bottom:16px;">
+      <div style="font-size:12px;font-weight:500;color:var(--olive-d);margin-bottom:6px;">Статус браузерных уведомлений:</div>
+      <div id="notifPermStatus" style="font-size:12px;margin-bottom:8px;font-weight:500;"></div>
+      <button id="btnReqNotif" onclick="enableNotifications()" class="btn btn-p" style="width:100%;text-align:center;">Включить уведомления</button>
+    </div>
+
+    <div style="margin-bottom:16px;">
+      <label class="form-label" style="font-weight:500;color:var(--txt);margin-bottom:4px;display:block;">⏱ Заблаговременное напоминание (Тип 2):</label>
+      <select class="form-select" id="notifAdvanceSelect" onchange="saveNotifSettings()">
+        <option value="0">Без заблаговременного (только в точное время)</option>
+        <option value="5">За 5 минут до задачи</option>
+        <option value="15">За 15 минут до задачи</option>
+        <option value="30">За 30 минут до задачи</option>
+        <option value="60">За 1 час до задачи</option>
+      </select>
+    </div>
+
+    <div style="background:var(--gold-l);border:.5px solid var(--gold);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--gold-d);line-height:1.5;margin-bottom:16px;">
+      💡 <b>Как указать время задачи:</b> В поле времени рядом с задачей впишите время (например, <code style="background:#fff;padding:1px 4px;border-radius:3px;">14:30</code> или <code style="background:#fff;padding:1px 4px;border-radius:3px;">09:00</code>). Планер подаст сигнал и заранее, и в точный час!
+    </div>
+
+    <div style="text-align:right;">
+      <button onclick="closeNotifModal()" class="btn btn-p">Сохранить и закрыть</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ═══ CONSTANTS ═══
 const MRU=['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
@@ -616,14 +654,118 @@ function flushSave(){
 }
 
 let isCheckingCloud = false;
-window.addEventListener('focus', checkCloudSync);
+window.addEventListener('focus', ()=>{ checkCloudSync(); checkTaskNotifications(); });
 document.addEventListener('visibilitychange', ()=>{
-  if(document.visibilityState === 'visible') checkCloudSync();
+  if(document.visibilityState === 'visible'){ checkCloudSync(); checkTaskNotifications(); }
   if(document.visibilityState === 'hidden') flushSave();
 });
 window.addEventListener('pagehide', flushSave);
 window.addEventListener('beforeunload', flushSave);
-setInterval(checkCloudSync, 15000);
+setInterval(()=>{ checkCloudSync(); checkTaskNotifications(); }, 15000);
+
+// ═══ NOTIFICATION LOGIC ═══
+let NOTIF_ADVANCE = parseInt(localStorage.getItem('plannerNotifAdvance') || '15', 10);
+let notifiedKeys = new Set();
+
+function openNotifModal(){
+  const modal = document.getElementById('notifModal');
+  if(modal) modal.style.display = 'flex';
+  updateNotifUI();
+}
+function closeNotifModal(){
+  const modal = document.getElementById('notifModal');
+  if(modal) modal.style.display = 'none';
+}
+
+function updateNotifUI(){
+  const st = document.getElementById('notifPermStatus');
+  const btn = document.getElementById('btnReqNotif');
+  const sel = document.getElementById('notifAdvanceSelect');
+  if(sel) sel.value = NOTIF_ADVANCE.toString();
+
+  if(!('Notification' in window)){
+    if(st){ st.textContent = '❌ Ваш браузер не поддерживает веб-уведомления.'; st.style.color = '#c62828'; }
+    if(btn) btn.style.display = 'none';
+    return;
+  }
+  if(Notification.permission === 'granted'){
+    if(st){ st.textContent = '✓ Уведомления включены и активны!'; st.style.color = 'var(--olive-d)'; }
+    if(btn){ btn.textContent = '✓ Уведомления разрешены'; btn.style.opacity = '0.7'; }
+  } else if(Notification.permission === 'denied'){
+    if(st){ st.textContent = '⚠ Уведомления заблокированы в настройках браузера.'; st.style.color = '#c62828'; }
+    if(btn) btn.textContent = 'Заблокировано браузером';
+  } else {
+    if(st){ st.textContent = 'Уведомления ещё не включены.'; st.style.color = 'var(--mocha)'; }
+    if(btn){ btn.textContent = 'Включить уведомления'; btn.style.opacity = '1'; }
+  }
+}
+
+async function enableNotifications(){
+  if(!('Notification' in window)) return;
+  if(Notification.permission === 'granted'){
+    updateNotifUI();
+    return;
+  }
+  const perm = await Notification.requestPermission();
+  updateNotifUI();
+  if(perm === 'granted'){
+    showSystemNotif('🔔 Уведомления включены!', 'Планер пришлёт вам напоминания вовремя.');
+  }
+}
+
+function saveNotifSettings(){
+  const sel = document.getElementById('notifAdvanceSelect');
+  if(sel){
+    NOTIF_ADVANCE = parseInt(sel.value, 10);
+    localStorage.setItem('plannerNotifAdvance', NOTIF_ADVANCE.toString());
+  }
+}
+
+function showSystemNotif(title, body){
+  if('Notification' in window && Notification.permission === 'granted'){
+    try {
+      new Notification(title, { body: body });
+    } catch(e){}
+  }
+}
+
+function checkTaskNotifications(){
+  if(!('Notification' in window) || Notification.permission !== 'granted') return;
+  const now = new Date();
+  const currentHours = now.getHours();
+  const currentMinutes = now.getMinutes();
+  const currentTotalMin = currentHours * 60 + currentMinutes;
+
+  const tasks = getDayTasks();
+  tasks.forEach((t, idx) => {
+    if(t.done || !t.text || !t.time) return;
+    const timeStr = t.time.trim();
+    const match = timeStr.match(/^(\d{1,2})[:\.\- ](\d{2})$/);
+    if(!match) return;
+    const h = parseInt(match[1], 10);
+    const m = parseInt(match[2], 10);
+    if(h < 0 || h > 23 || m < 0 || m > 59) return;
+    const taskTotalMin = h * 60 + m;
+
+    const exactKey = `exact_${TK}_${idx}_${taskTotalMin}_${t.text}`;
+    const advKey = `adv_${TK}_${idx}_${taskTotalMin}_${t.text}`;
+
+    // 1. Advance notification (Type B)
+    if(NOTIF_ADVANCE > 0){
+      const advTotalMin = taskTotalMin - NOTIF_ADVANCE;
+      if(currentTotalMin >= advTotalMin && currentTotalMin < taskTotalMin && !notifiedKeys.has(advKey)){
+        notifiedKeys.add(advKey);
+        showSystemNotif(`⏳ Напоминание (через ${NOTIF_ADVANCE} мин)`, `«${t.text}» запланировано на ${t.time}`);
+      }
+    }
+
+    // 2. Exact time notification (Type A)
+    if(currentTotalMin === taskTotalMin && !notifiedKeys.has(exactKey)){
+      notifiedKeys.add(exactKey);
+      showSystemNotif(`⏰ Время задачи: ${t.time}`, `«${t.text}» — пора начинать!`);
+    }
+  });
+}
 
 function showSv(cls, text){
   const el=document.getElementById('sv');
@@ -737,7 +879,7 @@ async function start(){
   rolloverUnfinishedTasks();
   runSchedules();
   syncToCalendar();
-  renderRecur();renderDayTasks();renderTodayHabits();renderGoals();
+  renderRecur();renderDayTasks();renderTodayHabits();renderGoals();renderCal();
 }
 
 function ustate(){
@@ -922,14 +1064,77 @@ function renderDayTasks(){
     const pd=document.createElement('div');pd.className=`pd p${t.pri||0}`;
     pd.title='Нажми для смены приоритета';
     pd.onclick=()=>{t.pri=((t.pri||0)+1)%4;sv();renderDayTasks();};
+    const mvTmwBtn=document.createElement('div');mvTmwBtn.className='xbtn';
+    mvTmwBtn.style.cssText='font-size:12px;color:var(--olive-d);cursor:pointer;text-align:center;transition:var(--tr);';
+    mvTmwBtn.textContent='➡️';
+    mvTmwBtn.title='Перенести на завтра';
+    mvTmwBtn.onclick=()=>moveTaskToDate(i, fk(addD(today,1)));
+
+    const mvCalBtn=document.createElement('div');mvCalBtn.className='xbtn';
+    mvCalBtn.style.cssText='font-size:12px;color:var(--mocha);cursor:pointer;text-align:center;transition:var(--tr);';
+    mvCalBtn.textContent='📅';
+    mvCalBtn.title='Выбрать дату переноса';
+    mvCalBtn.onclick=()=>{
+      const d=prompt('Укажите дату переноса (в формате ГГГГ-ММ-ДД):', fk(addD(today,1)));
+      if(d && d.trim()) moveTaskToDate(i, d.trim());
+    };
+
     const xb=document.createElement('div');xb.className='xbtn';xb.textContent='×';
     xb.onclick=()=>{getDayTasks().splice(i,1);sv();renderDayTasks();updProg();};
 
-    // grid: handle + cb + task + time + pri + del
-    row.style.gridTemplateColumns='16px 22px 1fr 44px 22px 24px';
-    row.append(handle,ck,inp,ti,pd,xb);c.appendChild(row);
+    // grid: handle + cb + task + time + pri + tmw + cal + del
+    row.style.gridTemplateColumns='16px 22px 1fr 44px 22px 20px 20px 24px';
+    row.append(handle,ck,inp,ti,pd,mvTmwBtn,mvCalBtn,xb);c.appendChild(row);
   });
   updProg();
+}
+
+function moveTaskToDate(i, targetDateKey){
+  const tasks=getDayTasks();
+  if(i<0||i>=tasks.length)return;
+  const task=tasks.splice(i,1)[0];
+  if(!targetDateKey) targetDateKey=fk(addD(today,1));
+  if(!D.days[targetDateKey])D.days[targetDateKey]={};
+  if(!D.days[targetDateKey].tasks)D.days[targetDateKey].tasks=[];
+  D.days[targetDateKey].tasks.push(task);
+  sv();renderDayTasks();updProg();
+  const msg=document.getElementById('autoMsg');
+  if(msg){
+    msg.textContent=`➡️ Задача «${task.text||'без названия'}» перенесена на ${targetDateKey}`;
+    msg.classList.add('show');
+    setTimeout(()=>msg.classList.remove('show'),3500);
+  }
+}
+
+function moveAllUnfinishedToTomorrow(){
+  const tasks=getDayTasks();
+  const unfinished=[];
+  const remaining=[];
+  tasks.forEach(t=>{
+    if(!t.done && (t.text||'').trim()) unfinished.push(t);
+    else remaining.push(t);
+  });
+  if(!unfinished.length){
+    const msg=document.getElementById('autoMsg');
+    if(msg){
+      msg.textContent='Инфо: Нет невыполненных задач для переноса.';
+      msg.classList.add('show');
+      setTimeout(()=>msg.classList.remove('show'),3000);
+    }
+    return;
+  }
+  D.days[TK].tasks=remaining;
+  const targetDateKey=fk(addD(today,1));
+  if(!D.days[targetDateKey])D.days[targetDateKey]={};
+  if(!D.days[targetDateKey].tasks)D.days[targetDateKey].tasks=[];
+  D.days[targetDateKey].tasks.push(...unfinished);
+  sv();renderDayTasks();updProg();
+  const msg=document.getElementById('autoMsg');
+  if(msg){
+    msg.textContent=`➡️ Перенесено задач на завтра: ${unfinished.length}`;
+    msg.classList.add('show');
+    setTimeout(()=>msg.classList.remove('show'),4000);
+  }
 }
 
 function addTask(){
