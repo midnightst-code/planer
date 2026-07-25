@@ -1097,7 +1097,16 @@ function moveTaskToDate(i, targetDateKey){
   if(!D.days[targetDateKey])D.days[targetDateKey]={};
   if(!D.days[targetDateKey].tasks)D.days[targetDateKey].tasks=[];
   D.days[targetDateKey].tasks.push(task);
-  sv();renderDayTasks();updProg();
+
+  if(task.text){
+    if(!D.calEvents[targetDateKey]) D.calEvents[targetDateKey] = [];
+    const exists = D.calEvents[targetDateKey].some(ev=>ev.text===task.text);
+    if(!exists){
+      D.calEvents[targetDateKey].push({text: task.text, done: task.done||false, pri: task.pri||0, fromDayTask: true});
+    }
+  }
+
+  sv();renderDayTasks();renderCal();updProg();
   const msg=document.getElementById('autoMsg');
   if(msg){
     msg.textContent=`➡️ Задача «${task.text||'без названия'}» перенесена на ${targetDateKey}`;
@@ -1128,7 +1137,18 @@ function moveAllUnfinishedToTomorrow(){
   if(!D.days[targetDateKey])D.days[targetDateKey]={};
   if(!D.days[targetDateKey].tasks)D.days[targetDateKey].tasks=[];
   D.days[targetDateKey].tasks.push(...unfinished);
-  sv();renderDayTasks();updProg();
+
+  if(!D.calEvents[targetDateKey]) D.calEvents[targetDateKey] = [];
+  unfinished.forEach(u => {
+    if(u.text){
+      const exists = D.calEvents[targetDateKey].some(ev=>ev.text===u.text);
+      if(!exists){
+        D.calEvents[targetDateKey].push({text: u.text, done: false, pri: u.pri||0, fromDayTask: true});
+      }
+    }
+  });
+
+  sv();renderDayTasks();renderCal();updProg();
   const msg=document.getElementById('autoMsg');
   if(msg){
     msg.textContent=`➡️ Перенесено задач на завтра: ${unfinished.length}`;
@@ -1779,8 +1799,25 @@ function runSchedules(){
 // ═══ СИНХРОНИЗАЦИЯ В КАЛЕНДАРЬ ═══
 // Проставляет повторяющиеся задачи и расписания в calEvents на 60 дней вперёд
 function syncToCalendar(){
+  syncDayTasksToCalendar();
   syncRecurringToCalendar();
   syncSchedulesToCalendar();
+}
+
+function syncDayTasksToCalendar(){
+  if(!D.days) return;
+  Object.keys(D.days).forEach(dk => {
+    const dayTasks = D.days[dk]?.tasks || [];
+    if(!dayTasks.length) return;
+    if(!D.calEvents[dk]) D.calEvents[dk] = [];
+    dayTasks.forEach(t => {
+      if(!t.text) return;
+      const exists = D.calEvents[dk].some(ev => ev.text === t.text);
+      if(!exists){
+        D.calEvents[dk].push({ text: t.text, done: t.done || false, pri: t.pri || 0, fromDayTask: true });
+      }
+    });
+  });
 }
 
 function syncRecurringToCalendar(){
