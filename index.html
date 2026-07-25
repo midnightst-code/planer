@@ -914,20 +914,23 @@ function autoImportFromCalendar(){
   const events=D.calEvents[TK]||[];
   if(!events.length)return;
   const tasks=getDayTasks();
-  const existingTexts=new Set(tasks.map(t=>t.text));
+  const existingTexts=new Set(tasks.map(t=>t.text).filter(Boolean));
   let imported=0;
   events.forEach(ev=>{
-    if(!existingTexts.has(ev.text)){
-      tasks.push({text:ev.text,done:false,pri:ev.pri||0,time:'',fromCal:true});
+    if(!ev.fromDayTask && !ev.fromRecur && !ev.fromSched && ev.text && !existingTexts.has(ev.text)){
+      tasks.push({text:ev.text,done:ev.done||false,pri:ev.pri||0,time:'',fromCal:true});
+      existingTexts.add(ev.text);
       imported++;
     }
   });
   if(imported>0){
     sv();
     const msg=document.getElementById('autoMsg');
-    msg.textContent=`📅 Из календаря автоматически добавлено задач: ${imported}`;
-    msg.classList.add('show');
-    setTimeout(()=>msg.classList.remove('show'),5000);
+    if(msg){
+      msg.textContent=`📅 Из календаря автоматически добавлено задач: ${imported}`;
+      msg.classList.add('show');
+      setTimeout(()=>msg.classList.remove('show'),5000);
+    }
   }
 }
 
@@ -1108,7 +1111,14 @@ function renderDayTasks(){
     };
 
     const xb=document.createElement('div');xb.className='xbtn';xb.textContent='×';
-    xb.onclick=()=>{getDayTasks().splice(i,1);sv();renderDayTasks();updProg();};
+    xb.onclick=()=>{
+      const delTask = getDayTasks().splice(i,1)[0];
+      if(delTask && delTask.text && D.calEvents[TK]){
+        D.calEvents[TK] = D.calEvents[TK].filter(ev => ev.text !== delTask.text);
+        if(D.calEvents[TK].length === 0) delete D.calEvents[TK];
+      }
+      sv(); flushSave(); renderDayTasks(); renderCal(); updProg();
+    };
 
     // grid: handle + cb + task + time + pri + tmw + cal + del
     row.style.gridTemplateColumns='16px 22px 1fr 44px 22px 20px 20px 24px';
@@ -1290,10 +1300,8 @@ function cleanCalendarJunk(){
   let cleaned = false;
   Object.keys(D.calEvents).forEach(dk=>{
     const before = D.calEvents[dk].length;
-    // Оставляем только вручную добавленные события (без fromRecur и fromSched)
-    D.calEvents[dk] = D.calEvents[dk].filter(ev => !ev.fromRecur && !ev.fromSched);
+    D.calEvents[dk] = D.calEvents[dk].filter(ev => !ev.fromRecur && !ev.fromSched && !ev.fromDayTask);
     if(D.calEvents[dk].length !== before) cleaned = true;
-    // Удаляем пустые дни
     if(D.calEvents[dk].length === 0) delete D.calEvents[dk];
   });
   if(cleaned) sv();
