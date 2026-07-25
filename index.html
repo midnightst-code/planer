@@ -271,7 +271,7 @@ body{font-family:var(--font-b);background:var(--gray-l);color:var(--txt);font-si
       <div class="card">
         <div class="ch"><span class="cht">✅ Задачи</span><span id="dayProg" style="font-size:11px;color:var(--olive-d);font-weight:500;">0 / 0</span></div>
         <div class="cb2">
-          <div class="tsh" style="grid-template-columns:16px 22px 1fr 54px 22px 20px 20px 24px;"><span></span><span>Задача</span><span>время</span><span>!</span><span></span><span></span><span></span></div>
+          <div class="tsh" style="grid-template-columns:16px 22px 54px 1fr 22px 20px 20px 24px;"><span></span><span></span><span>время</span><span>Задача</span><span>!</span><span></span><span></span><span></span></div>
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
             <div style="font-size:10px;color:var(--olive-d);font-weight:500;letter-spacing:.04em;">🔁 ПОВТОРЯЮЩИЕСЯ</div>
             <button onclick="openSchedModal()" style="font-size:10px;color:var(--mocha);background:none;border:none;cursor:pointer;font-family:var(--font-b);padding:0;opacity:.7;" title="Управление расписаниями">⚙ расписания</button>
@@ -991,7 +991,7 @@ function renderRecur(){
   rt.forEach((r,i)=>{
     const row=document.createElement('div');
     row.className='tr2 rec';
-    row.style.gridTemplateColumns='16px 22px 1fr 54px 22px 24px';
+    row.style.gridTemplateColumns='16px 22px 54px 1fr 22px 24px';
     const handle=document.createElement('div');
     handle.textContent='⠿';
     handle.draggable=true;
@@ -1019,17 +1019,18 @@ function renderRecur(){
     };
     const ck=document.createElement('div');ck.className='ck'+(r.done?' on':'');
     ck.onclick=()=>{r.done=!r.done;sv();renderRecur();updProg();};
+    const ti2=document.createElement('input');ti2.className='ti';ti2.value=r.time||'';ti2.placeholder='14:30';
+    ti2.title='Время задачи (например: 14:30) для уведомлений';
+    ti2.style.cssText='font-size:11px;color:var(--txt);text-align:center;outline:none;border:.5px solid var(--beige);border-radius:4px;background:#fff;width:50px;padding:2px;font-family:var(--font-b);';
+    ti2.oninput=()=>{r.time=ti2.value;sv();};
     const inp=document.createElement('input');inp.className='tt'+(r.done?' done':'');
     inp.value=r.text||'';inp.placeholder='Повторяющаяся задача...';
     inp.oninput=()=>{r.text=inp.value;sv();syncRecurringToCalendar();};
-    const ti2=document.createElement('input');ti2.className='ti';ti2.value=r.time||'';ti2.placeholder='14:30';
-    ti2.title='Время задачи (например: 14:30) для уведомлений';
-    ti2.oninput=()=>{r.time=ti2.value;sv();};
     const pd=document.createElement('div');pd.className=`pd p${r.pri||0}`;pd.title='Приоритет';
     pd.onclick=()=>{r.pri=((r.pri||0)+1)%4;sv();renderRecur();};
     const xb=document.createElement('div');xb.className='xbtn';xb.textContent='×';
     xb.onclick=()=>{rt.splice(i,1);sv();renderRecur();updProg();};
-    row.append(handle,ck,inp,ti2,pd,xb);c.appendChild(row);
+    row.append(handle,ck,ti2,inp,pd,xb);c.appendChild(row);
   });
   const addBtn=document.createElement('button');
   addBtn.className='addbtn';addBtn.textContent='+ добавить повторяющуюся задачу';
@@ -1045,21 +1046,22 @@ function renderDayTasks(){
   let dragIdx=null;
   tasks.forEach((t,i)=>{
     const row=document.createElement('div');
-    row.className='tr2';row.draggable=true;
+    row.className='tr2';
     row.style.cssText='transition:opacity .15s;cursor:default;';
 
     // drag handle
     const handle=document.createElement('div');
     handle.textContent='⠿';
+    handle.draggable=true;
     handle.style.cssText='font-size:14px;color:var(--gray-m);cursor:grab;padding:0 2px;flex-shrink:0;user-select:none;';
     handle.title='Перетащи чтобы изменить порядок';
 
-    row.ondragstart=e=>{
+    handle.ondragstart=e=>{
       dragIdx=i; row.style.opacity='0.4';
       e.dataTransfer.effectAllowed='move';
       e.dataTransfer.setData('text/plain',i);
     };
-    row.ondragend=e=>{ row.style.opacity='1'; document.querySelectorAll('#dayTasks .tr2').forEach(r=>r.classList.remove('drag-over-top','drag-over-bot')); };
+    handle.ondragend=e=>{ row.style.opacity='1'; document.querySelectorAll('#dayTasks .tr2').forEach(r=>r.classList.remove('drag-over-top','drag-over-bot')); };
     row.ondragover=e=>{
       e.preventDefault(); e.dataTransfer.dropEffect='move';
       const rect=row.getBoundingClientRect();
@@ -1085,14 +1087,18 @@ function renderDayTasks(){
 
     const ck=document.createElement('div');ck.className='ck'+(t.done?' on':'');
     ck.onclick=()=>{t.done=!t.done;sv();renderDayTasks();updProg();};
+
+    const ti=document.createElement('input');ti.className='ti';ti.value=t.time||'';ti.placeholder='14:30';
+    ti.title='Время задачи (например: 14:30) для уведомлений';
+    ti.style.cssText='font-size:11px;color:var(--txt);text-align:center;outline:none;border:.5px solid var(--beige);border-radius:4px;background:#fff;width:50px;padding:2px;font-family:var(--font-b);';
+    ti.oninput=()=>{t.time=ti.value;sv();};
+    ti.onblur=()=>{t.time=ti.value;sv();flushSave();};
+    ti.onchange=()=>{t.time=ti.value;sv();flushSave();};
+
     const inp=document.createElement('input');inp.className='tt'+(t.done?' done':'');inp.value=t.text||'';inp.placeholder='Задача...';
     inp.oninput=()=>{t.text=inp.value;sv();};
     inp.onblur=()=>{t.text=inp.value;sv();flushSave();};
     inp.onchange=()=>{t.text=inp.value;sv();flushSave();};
-    const ti=document.createElement('input');ti.className='ti';ti.value=t.time||'';ti.placeholder='мин';
-    ti.oninput=()=>{t.time=ti.value;sv();};
-    ti.onblur=()=>{t.time=ti.value;sv();flushSave();};
-    ti.onchange=()=>{t.time=ti.value;sv();flushSave();};
 
     const pd=document.createElement('div');pd.className=`pd p${t.pri||0}`;
     pd.title='Нажми для смены приоритета';
@@ -1122,9 +1128,9 @@ function renderDayTasks(){
       sv(); flushSave(); renderDayTasks(); renderCal(); updProg();
     };
 
-    // grid: handle + cb + task + time + pri + tmw + cal + del
-    row.style.gridTemplateColumns='16px 22px 1fr 44px 22px 20px 20px 24px';
-    row.append(handle,ck,inp,ti,pd,mvTmwBtn,mvCalBtn,xb);c.appendChild(row);
+    // grid: handle + cb + time + task + pri + tmw + cal + del
+    row.style.gridTemplateColumns='16px 22px 54px 1fr 22px 20px 20px 24px';
+    row.append(handle,ck,ti,inp,pd,mvTmwBtn,mvCalBtn,xb);c.appendChild(row);
   });
   updProg();
 }
