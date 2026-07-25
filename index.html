@@ -588,6 +588,43 @@ const JSONBIN_URL = 'https://api.jsonbin.io/v3/b';
 let BIN_ID = localStorage.getItem('plannerBinId') || '';
 let syncTimer = null;
 
+async function checkCloudSync(){
+  if(!JSONBIN_KEY||!BIN_ID||isCheckingCloud) return;
+  isCheckingCloud = true;
+  try {
+    const cloud = await pullCloud();
+    const localSavedAt = D._savedAt || 0;
+    const cloudSavedAt = cloud ? (cloud._savedAt || 0) : 0;
+    if(cloud && cloudSavedAt > localSavedAt){
+      D = cloud;
+      localStorage.setItem('plannerV2', JSON.stringify(D));
+      refreshUIFromData();
+      showSv('synced','Обновлено из облака 🔄');
+    }
+  } catch(e){}
+  finally {
+    isCheckingCloud = false;
+  }
+}
+
+function flushSave(){
+  if(syncTimer){
+    clearTimeout(syncTimer);
+    syncTimer = null;
+    pushCloud(D);
+  }
+}
+
+let isCheckingCloud = false;
+window.addEventListener('focus', checkCloudSync);
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState === 'visible') checkCloudSync();
+  if(document.visibilityState === 'hidden') flushSave();
+});
+window.addEventListener('pagehide', flushSave);
+window.addEventListener('beforeunload', flushSave);
+setInterval(checkCloudSync, 15000);
+
 function showSv(cls, text){
   const el=document.getElementById('sv');
   el.textContent=text; el.className='saved show '+cls;
@@ -650,6 +687,7 @@ function sv(){
   if(!D.resRef)D.resRef={};
   if(!D.resRef[rmk])D.resRef[rmk]={};
   ['rm1','rm2','rm3','rm4','rm5'].forEach(id=>{const el=document.getElementById(id);if(el)D.resRef[rmk][id]=el.value;});
+  D._savedAt = Date.now();
   localStorage.setItem('plannerV2',JSON.stringify(D));
   clearTimeout(syncTimer);
   syncTimer=setTimeout(()=>pushCloud(D),500);
