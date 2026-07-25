@@ -271,7 +271,7 @@ body{font-family:var(--font-b);background:var(--gray-l);color:var(--txt);font-si
       <div class="card">
         <div class="ch"><span class="cht">✅ Задачи</span><span id="dayProg" style="font-size:11px;color:var(--olive-d);font-weight:500;">0 / 0</span></div>
         <div class="cb2">
-          <div class="tsh" style="grid-template-columns:16px 22px 1fr 44px 22px 20px 20px 24px;"><span></span><span>Задача</span><span>мин</span><span>!</span><span></span><span></span><span></span></div>
+          <div class="tsh" style="grid-template-columns:16px 22px 1fr 54px 22px 20px 20px 24px;"><span></span><span>Задача</span><span>время</span><span>!</span><span></span><span></span><span></span></div>
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
             <div style="font-size:10px;color:var(--olive-d);font-weight:500;letter-spacing:.04em;">🔁 ПОВТОРЯЮЩИЕСЯ</div>
             <button onclick="openSchedModal()" style="font-size:10px;color:var(--mocha);background:none;border:none;cursor:pointer;font-family:var(--font-b);padding:0;opacity:.7;" title="Управление расписаниями">⚙ расписания</button>
@@ -990,13 +990,14 @@ function renderRecur(){
   let dragIdx=null;
   rt.forEach((r,i)=>{
     const row=document.createElement('div');
-    row.className='tr2 rec';row.draggable=true;
-    row.style.gridTemplateColumns='16px 22px 1fr 44px 22px 24px';
+    row.className='tr2 rec';
+    row.style.gridTemplateColumns='16px 22px 1fr 54px 22px 24px';
     const handle=document.createElement('div');
     handle.textContent='⠿';
+    handle.draggable=true;
     handle.style.cssText='font-size:14px;color:var(--olive-l);cursor:grab;padding:0 2px;flex-shrink:0;user-select:none;';
-    row.ondragstart=e=>{dragIdx=i;row.style.opacity='0.4';e.dataTransfer.effectAllowed='move';};
-    row.ondragend=()=>{row.style.opacity='1';document.querySelectorAll('#recurTasks .tr2').forEach(r=>r.classList.remove('drag-over-top','drag-over-bot'));};
+    handle.ondragstart=e=>{dragIdx=i;row.style.opacity='0.4';e.dataTransfer.effectAllowed='move';};
+    handle.ondragend=()=>{row.style.opacity='1';document.querySelectorAll('#recurTasks .tr2').forEach(r=>r.classList.remove('drag-over-top','drag-over-bot'));};
     row.ondragover=e=>{
       e.preventDefault();
       const rect=row.getBoundingClientRect(),mid=rect.top+rect.height/2;
@@ -1021,7 +1022,8 @@ function renderRecur(){
     const inp=document.createElement('input');inp.className='tt'+(r.done?' done':'');
     inp.value=r.text||'';inp.placeholder='Повторяющаяся задача...';
     inp.oninput=()=>{r.text=inp.value;sv();syncRecurringToCalendar();};
-    const ti2=document.createElement('input');ti2.className='ti';ti2.value=r.time||'';ti2.placeholder='мин';
+    const ti2=document.createElement('input');ti2.className='ti';ti2.value=r.time||'';ti2.placeholder='14:30';
+    ti2.title='Время задачи (например: 14:30) для уведомлений';
     ti2.oninput=()=>{r.time=ti2.value;sv();};
     const pd=document.createElement('div');pd.className=`pd p${r.pri||0}`;pd.title='Приоритет';
     pd.onclick=()=>{r.pri=((r.pri||0)+1)%4;sv();renderRecur();};
