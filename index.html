@@ -867,6 +867,7 @@ let D=loadLocal();
 function harvestTaskInputs(){
   const dayTaskRows = document.querySelectorAll('#dayTasks .tr2');
   const tasks = getDayTasks();
+  if(dayTaskRows.length !== tasks.length) return;
   dayTaskRows.forEach((row, i) => {
     const inp = row.querySelector('.tt');
     const ti = row.querySelector('.ti');
@@ -1060,7 +1061,7 @@ function renderRecur(){
       let ti=i>dragIdx?i-1:i;
       if(insertAfter)ti++;
       rt.splice(ti,0,moved);
-      dragIdx=null;sv();renderRecur();
+      dragIdx=null;renderRecur();sv();
     };
     const ck=document.createElement('div');ck.className='ck'+(r.done?' on':'');
     ck.onclick=()=>{r.done=!r.done;sv();renderRecur();updProg();};
@@ -1107,6 +1108,42 @@ function renderDayTasks(){
       e.dataTransfer.setData('text/plain',i);
     };
     handle.ondragend=e=>{ row.style.opacity='1'; document.querySelectorAll('#dayTasks .tr2').forEach(r=>r.classList.remove('drag-over-top','drag-over-bot')); };
+
+    handle.ontouchstart=e=>{
+      dragIdx=i; row.style.opacity='0.5';
+    };
+    handle.ontouchmove=e=>{
+      if(dragIdx===null)return;
+      e.preventDefault();
+      const touchY=e.touches[0].clientY;
+      const rows=Array.from(document.querySelectorAll('#dayTasks .tr2'));
+      rows.forEach(r=>r.classList.remove('drag-over-top','drag-over-bot'));
+      const targetRow=document.elementFromPoint(e.touches[0].clientX,touchY)?.closest('#dayTasks .tr2');
+      if(targetRow && targetRow!==row){
+        const rect=targetRow.getBoundingClientRect();
+        targetRow.classList.add(touchY<rect.top+rect.height/2?'drag-over-top':'drag-over-bot');
+      }
+    };
+    handle.ontouchend=e=>{
+      if(dragIdx===null)return;
+      row.style.opacity='1';
+      const touch=e.changedTouches[0];
+      const targetRow=document.elementFromPoint(touch.clientX,touch.clientY)?.closest('#dayTasks .tr2');
+      const rows=Array.from(document.querySelectorAll('#dayTasks .tr2'));
+      rows.forEach(r=>r.classList.remove('drag-over-top','drag-over-bot'));
+      if(targetRow){
+        const targetIdx=rows.indexOf(targetRow);
+        if(targetIdx!==-1 && targetIdx!==dragIdx){
+          const tasks2=getDayTasks();
+          const moved=tasks2.splice(dragIdx,1)[0];
+          tasks2.splice(targetIdx,0,moved);
+          renderDayTasks();
+          sv();
+        }
+      }
+      dragIdx=null;
+    };
+
     row.ondragover=e=>{
       e.preventDefault(); e.dataTransfer.dropEffect='move';
       const rect=row.getBoundingClientRect();
@@ -1127,7 +1164,7 @@ function renderDayTasks(){
       let targetIdx=i>dragIdx?i-1:i;
       if(insertAfter) targetIdx++;
       tasks2.splice(targetIdx,0,moved);
-      dragIdx=null; sv(); renderDayTasks();
+      dragIdx=null; renderDayTasks(); sv();
     };
 
     const ck=document.createElement('div');ck.className='ck'+(t.done?' on':'');
@@ -1170,7 +1207,7 @@ function renderDayTasks(){
         D.calEvents[TK] = D.calEvents[TK].filter(ev => ev.text !== delTask.text);
         if(D.calEvents[TK].length === 0) delete D.calEvents[TK];
       }
-      sv(); flushSave(); renderDayTasks(); renderCal(); updProg();
+      renderDayTasks(); renderCal(); updProg(); sv(); flushSave();
     };
 
     // grid: handle + cb + time + task + pri + tmw + cal + del
@@ -1193,11 +1230,11 @@ function moveTaskToDate(i, targetDateKey){
     if(!D.calEvents[targetDateKey]) D.calEvents[targetDateKey] = [];
     const exists = D.calEvents[targetDateKey].some(ev=>ev.text===task.text);
     if(!exists){
-      D.calEvents[targetDateKey].push({text: task.text, done: task.done||false, pri: task.pri||0, fromDayTask: true});
+      D.calEvents[targetDateKey].push({text: task.text, done: task.done||false, pri: task.pri||0, time: task.time||'', fromDayTask: true});
     }
   }
 
-  sv();renderDayTasks();renderCal();updProg();
+  renderDayTasks();renderCal();updProg();sv();flushSave();
   const msg=document.getElementById('autoMsg');
   if(msg){
     msg.textContent=`➡️ Задача «${task.text||'без названия'}» перенесена на ${targetDateKey}`;
