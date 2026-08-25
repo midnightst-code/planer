@@ -2242,15 +2242,18 @@ async function saveKey(){
       const r=await fetch(JSONBIN_URL,{method:'POST',
         headers:{'Content-Type':'application/json','X-Master-Key':JSONBIN_KEY,'X-Access-Key':JSONBIN_KEY,'X-Bin-Name':'plannerV2'},
         body:JSON.stringify(D)});
-      if(r.status===401){JSONBIN_KEY='';localStorage.removeItem('plannerJSONKey');st.textContent='Ключ неверный. Проверь и попробуй снова.';st.style.color='#c62828';return;}
-      const j=await r.json();
-      if(j.metadata?.id){
+      const j=await r.json().catch(()=>({}));
+      if(r.ok && j.metadata?.id){
         BIN_ID=j.metadata.id;
         localStorage.setItem('plannerBinId',BIN_ID);
         document.getElementById('binIdInput').value=BIN_ID;
         st.innerHTML='✓ Готово! Данные сохранены в облако.<br><b>Bin ID для iPhone:</b> <code style="background:var(--gray-m);padding:2px 6px;border-radius:4px;user-select:all;">'+BIN_ID+'</code><br><span style="font-size:11px;color:var(--gray-d);">Скопируй этот ID и введи в настройках на iPhone</span>';
         st.style.color='var(--olive-d)';
         showSv('synced','Синхронизировано ✓');
+      } else {
+        const msg = j.message || ('Ошибка сервера (код ' + r.status + ')');
+        st.textContent = 'Ключ неверный или не сработал: ' + msg;
+        st.style.color = '#c62828';
       }
     } else {
       await pushCloud(D);
