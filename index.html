@@ -820,23 +820,33 @@ function showSv(cls, text){
   if(cls==='synced'||cls==='local') el._t=setTimeout(()=>el.classList.remove('show'),2200);
 }
 
+function normalizeJsonbinKey(key){
+  key = (key || '').trim();
+  if(!key) return '';
+  if(key.startsWith('1b25')) key = '$2b$' + key.substring(4);
+  else if(key.startsWith('2b$')) key = '$' + key;
+  else if(key.startsWith('2b10')) key = '$2b$' + key.substring(2);
+  else if(key.startsWith('b$10$')) key = '$2' + key;
+  return key;
+}
+
 async function pushCloud(data){
   if(!JSONBIN_KEY){ showSv('local','Сохранено ✓'); return; }
-  // Ставим метку времени перед отправкой
   data._savedAt = Date.now();
   localStorage.setItem('plannerV2', JSON.stringify(data));
   showSv('syncing','Синхронизация...');
   try{
+    const headers = { 'Content-Type':'application/json', 'X-Master-Key': JSONBIN_KEY, 'X-Access-Key': JSONBIN_KEY };
     if(!BIN_ID){
       const r=await fetch(JSONBIN_URL,{method:'POST',
-        headers:{'Content-Type':'application/json','X-Master-Key':JSONBIN_KEY,'X-Bin-Name':'plannerV2'},
+        headers:{...headers, 'X-Bin-Name':'plannerV2'},
         body:JSON.stringify(data)});
       const j=await r.json();
       if(j.metadata?.id){ BIN_ID=j.metadata.id; localStorage.setItem('plannerBinId',BIN_ID); }
       else throw new Error('no id');
     } else {
       const r=await fetch(`${JSONBIN_URL}/${BIN_ID}`,{method:'PUT',
-        headers:{'Content-Type':'application/json','X-Master-Key':JSONBIN_KEY},
+        headers,
         body:JSON.stringify(data)});
       if(!r.ok) throw new Error(r.status);
     }
@@ -847,7 +857,8 @@ async function pushCloud(data){
 async function pullCloud(){
   if(!JSONBIN_KEY||!BIN_ID) return null;
   try{
-    const r=await fetch(`${JSONBIN_URL}/${BIN_ID}/latest`,{headers:{'X-Master-Key':JSONBIN_KEY}});
+    const headers = { 'X-Master-Key': JSONBIN_KEY, 'X-Access-Key': JSONBIN_KEY };
+    const r=await fetch(`${JSONBIN_URL}/${BIN_ID}/latest`,{headers});
     if(!r.ok) return null;
     const j=await r.json(); return j.record||null;
   } catch(e){ return null; }
@@ -2170,12 +2181,24 @@ function closeSettings(){
 }
 
 async function saveKey(){
-  const val=document.getElementById('keyInput').value.trim();
+  let val=document.getElementById('keyInput').value.trim();
   const binVal=document.getElementById('binIdInput').value.trim();
   const st=document.getElementById('settingsStatus');
-  if(!val){ st.textContent='Введи API-ключ.'; st.style.color='#c62828'; return; }
+
+  if(!val){
+    JSONBIN_KEY=''; BIN_ID='';
+    localStorage.removeItem('plannerJSONKey');
+    localStorage.removeItem('plannerBinId');
+    st.textContent='Синхронизация отключена (ключ удалён).';
+    st.style.color='var(--gray-d)';
+    return;
+  }
+
+  val = normalizeJsonbinKey(val);
+  document.getElementById('keyInput').value = val;
+
   if(!val.startsWith('$2b$') && !val.startsWith('$2a$')){
-    st.textContent='Ключ должен начинаться с $2b$ или $2a$ — проверь что скопировал правильно.';
+    st.textContent='Ключ должен начинаться с $2b$ или $2a$ — проверь, что выделил и скопировал его целиком с jsonbin.io';
     st.style.color='#c62828'; return;
   }
 
@@ -2206,12 +2229,18 @@ async function saveKey(){
     return;
   }
 
+  // Если поле Bin ID не заполнено — сбрасываем старый Bin ID для создания нового
+  if(!binVal){
+    BIN_ID = '';
+    localStorage.removeItem('plannerBinId');
+  }
+
   // Первое устройство — создаём новый bin
   st.textContent='Подключаюсь...'; st.style.color='var(--gold-d)';
   try{
     if(!BIN_ID){
       const r=await fetch(JSONBIN_URL,{method:'POST',
-        headers:{'Content-Type':'application/json','X-Master-Key':JSONBIN_KEY,'X-Bin-Name':'plannerV2'},
+        headers:{'Content-Type':'application/json','X-Master-Key':JSONBIN_KEY,'X-Access-Key':JSONBIN_KEY,'X-Bin-Name':'plannerV2'},
         body:JSON.stringify(D)});
       if(r.status===401){JSONBIN_KEY='';localStorage.removeItem('plannerJSONKey');st.textContent='Ключ неверный. Проверь и попробуй снова.';st.style.color='#c62828';return;}
       const j=await r.json();
@@ -2239,6 +2268,10 @@ function clearSyncKey(){
   JSONBIN_KEY=''; BIN_ID='';
   localStorage.removeItem('plannerJSONKey');
   localStorage.removeItem('plannerBinId');
+  const keyInp = document.getElementById('keyInput');
+  const binInp = document.getElementById('binIdInput');
+  if(keyInp) keyInp.value = '';
+  if(binInp) binInp.value = '';
   const st=document.getElementById('settingsStatus');
   st.textContent='Синхронизация отключена. Данные теперь только локально.';
   st.style.color='var(--gray-d)';
