@@ -268,7 +268,7 @@ body{font-family:var(--font-b);background:var(--gray-l);color:var(--txt);font-si
           <div class="sr"><span class="sl">Сон (часов)</span><input type="range" class="ss" min="1" max="12" step="0.5" value="7" id="sSleep" oninput="ustate();sv()"><span class="sv" id="sSleepV">7</span></div>
         </div>
       </div>
-      <div class="card">
+      <div class="card" id="tasksCard">
         <div class="ch"><span class="cht">✅ Задачи</span><span id="dayProg" style="font-size:11px;color:var(--olive-d);font-weight:500;">0 / 0</span></div>
         <div class="cb2">
           <div class="tsh" style="grid-template-columns:16px 22px 54px 1fr 22px 20px 20px 24px;"><span></span><span></span><span>время</span><span>Задача</span><span>!</span><span></span><span></span><span></span></div>
@@ -573,7 +573,7 @@ body{font-family:var(--font-b);background:var(--gray-l);color:var(--txt);font-si
   <div style="background:#fff;border-radius:14px;padding:28px;max-width:460px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.2);">
     <div style="font-family:'Cormorant Garamond',serif;font-size:22px;color:var(--olive-d);margin-bottom:6px;">🔔 Уведомления и напоминания</div>
     <div style="font-size:13px;color:var(--txt-m);margin-bottom:16px;line-height:1.6;">
-      Планер пришлет вам системное уведомление точно в указанный час задачи и за несколько минут/часов до неё.
+      Напоминания работают, пока планер открыт. Закрытая вкладка или заблокированный телефон могут не показать уведомление.
     </div>
 
     <div style="background:var(--gray-l);border-radius:10px;padding:14px;margin-bottom:16px;">
@@ -611,7 +611,7 @@ const MRGEN=['января','февраля','марта','апреля','мая
 const DOWR=['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
 const DOWF=['Воскресенье','Понедельник','Вторник','Среда','Четверг','Пятница','Суббота'];
 const today=new Date(); today.setHours(0,0,0,0);
-const TK=fk(today);
+let TK=fk(today);
 let wkStart=getMon(today);
 let habM={y:today.getFullYear(),m:today.getMonth()};
 let resM={y:today.getFullYear(),m:today.getMonth()};
@@ -673,7 +673,8 @@ document.addEventListener('visibilitychange', ()=>{
 });
 window.addEventListener('pagehide', flushSave);
 window.addEventListener('beforeunload', flushSave);
-setInterval(()=>{ checkCloudSync(); checkTaskNotifications(); }, 15000);
+setInterval(()=>{ checkTaskNotifications(); }, 30000);
+setInterval(()=>{ checkCloudSync(); }, 180000);
 
 // ═══ NOTIFICATION LOGIC ═══
 let NOTIF_ADVANCE = parseInt(localStorage.getItem('plannerNotifAdvance') || '15', 10);
@@ -776,7 +777,8 @@ function checkTaskNotifications(){
   const currentMinutes = now.getMinutes();
   const currentTotalMin = currentHours * 60 + currentMinutes;
 
-  const tasks = getDayTasks();
+  if(typeof ready!=='undefined'&&!ready)return;
+  const tasks = [...getDayTasks(),...(D.days[TK]?.recur||[])];
   tasks.forEach((t, idx) => {
     if(t.done || !t.text || !t.time || t.time === '00:00') return;
     const timeStr = t.time.trim();
@@ -875,17 +877,7 @@ function initData(){return{weekGoal:'',habits:DEFHAB.slice(),habData:{},healthDa
 function loadLocal(){try{return JSON.parse(localStorage.getItem('plannerV2')||'null')||initData();}catch{return initData();}}
 let D=loadLocal();
 
-function harvestTaskInputs(){
-  const dayTaskRows = document.querySelectorAll('#dayTasks .tr2');
-  const tasks = getDayTasks();
-  if(dayTaskRows.length !== tasks.length) return;
-  dayTaskRows.forEach((row, i) => {
-    const inp = row.querySelector('.tt');
-    const ti = row.querySelector('.ti');
-    if(inp && tasks[i]) tasks[i].text = inp.value;
-    if(ti && tasks[i]) tasks[i].time = ti.value;
-  });
-}
+function harvestTaskInputs(){}
 
 function sv(){
   harvestTaskInputs();
@@ -982,51 +974,7 @@ function autoImportFromCalendar(){
 }
 
 // ═══ ROLLOVER — перенос невыполненных задач с прошлых дней ═══
-function rolloverUnfinishedTasks(){
-  // Смотрим последние 30 дней назад
-  const todayTasks = getDayTasks();
-  const existingTexts = new Set([
-    ...todayTasks.map(t=>t.text),
-    ...(D.days[TK]?.recur||[]).map(r=>r.text)
-  ].filter(Boolean));
-
-  let totalRolled = 0;
-
-  for(let daysBack=1; daysBack<=30; daysBack++){
-    const pastDate = addD(today, -daysBack);
-    const pastKey = fk(pastDate);
-    const pastDay = D.days[pastKey];
-    if(!pastDay) continue;
-
-    // Переносим невыполненные плавающие задачи
-    const pastTasks = pastDay.tasks || [];
-    pastTasks.forEach(t=>{
-      if(t.text && !t.done && !existingTexts.has(t.text)){
-        todayTasks.push({
-          text: t.text,
-          done: false,
-          pri: t.pri||0,
-          time: t.time||'',
-          rolledFrom: pastKey
-        });
-        existingTexts.add(t.text);
-        totalRolled++;
-        // Помечаем исходную задачу как перенесённую чтобы не дублировать
-        t._rolled = true;
-      }
-    });
-    // Убираем перенесённые из прошлого дня
-    pastDay.tasks = pastTasks.filter(t=>!t._rolled);
-  }
-
-  if(totalRolled>0){
-    sv();
-    const msg=document.getElementById('autoMsg');
-    msg.textContent=`🔄 Перенесено невыполненных задач с прошлых дней: ${totalRolled}`;
-    msg.classList.add('show');
-    setTimeout(()=>msg.classList.remove('show'),6000);
-  }
-}
+function rolloverUnfinishedTasks(){}
 
 // ═══ DAY TASKS ═══
 function getDayTasks(){if(!D.days[TK])D.days[TK]={};if(!D.days[TK].tasks)D.days[TK].tasks=[];return D.days[TK].tasks;}
@@ -1214,8 +1162,9 @@ function renderDayTasks(){
     const xb=document.createElement('div');xb.className='xbtn';xb.textContent='×';
     xb.onclick=()=>{
       const delTask = getDayTasks().splice(i,1)[0];
+      if(delTask?.schedId)D.scheduleOverrides[`${delTask.schedId}:${TK}`]={skip:true};
       if(delTask && delTask.text && D.calEvents[TK]){
-        D.calEvents[TK] = D.calEvents[TK].filter(ev => ev.text !== delTask.text);
+        D.calEvents[TK] = D.calEvents[TK].filter(ev => !(ev.fromDayTask && ev.taskId===delTask.id));
         if(D.calEvents[TK].length === 0) delete D.calEvents[TK];
       }
       renderDayTasks(); renderCal(); updProg(); sv(); flushSave();
@@ -1231,7 +1180,9 @@ function renderDayTasks(){
 function moveTaskToDate(i, targetDateKey){
   const tasks=getDayTasks();
   if(i<0||i>=tasks.length)return;
+  if(targetDateKey && !PlannerCore.parseDate(targetDateKey)){alert('Нужна дата ГГГГ-ММ-ДД');return;}
   const task=tasks.splice(i,1)[0];
+  if(task.schedId){D.scheduleOverrides[`${task.schedId}:${TK}`]={skip:true};task.originalSchedId=task.schedId;delete task.schedId;delete task.fromSched;}
   if(!targetDateKey) targetDateKey=fk(addD(today,1));
   if(!D.days[targetDateKey])D.days[targetDateKey]={};
   if(!D.days[targetDateKey].tasks)D.days[targetDateKey].tasks=[];
@@ -1239,9 +1190,9 @@ function moveTaskToDate(i, targetDateKey){
 
   if(task.text){
     if(!D.calEvents[targetDateKey]) D.calEvents[targetDateKey] = [];
-    const exists = D.calEvents[targetDateKey].some(ev=>ev.text===task.text);
+    const exists = D.calEvents[targetDateKey].some(ev=>ev.taskId===task.id);
     if(!exists){
-      D.calEvents[targetDateKey].push({text: task.text, done: task.done||false, pri: task.pri||0, time: task.time||'', fromDayTask: true});
+      D.calEvents[targetDateKey].push({text: task.text, done: task.done||false, pri: task.pri||0, time: task.time||'', taskId: task.id, fromDayTask: true});
     }
   }
 
@@ -1271,6 +1222,7 @@ function moveAllUnfinishedToTomorrow(){
     }
     return;
   }
+  for(const task of unfinished){if(task.schedId){D.scheduleOverrides[`${task.schedId}:${TK}`]={skip:true};task.originalSchedId=task.schedId;delete task.schedId;delete task.fromSched;}}
   D.days[TK].tasks=remaining;
   const targetDateKey=fk(addD(today,1));
   if(!D.days[targetDateKey])D.days[targetDateKey]={};
@@ -1282,12 +1234,12 @@ function moveAllUnfinishedToTomorrow(){
     if(u.text){
       const exists = D.calEvents[targetDateKey].some(ev=>ev.text===u.text);
       if(!exists){
-        D.calEvents[targetDateKey].push({text: u.text, done: false, pri: u.pri||0, fromDayTask: true});
+        D.calEvents[targetDateKey].push({text: u.text, done: false, pri: u.pri||0, time:u.time||'', taskId:u.id, fromDayTask: true});
       }
     }
   });
 
-  sv();renderDayTasks();renderCal();updProg();
+  renderDayTasks();sv();renderCal();updProg();
   const msg=document.getElementById('autoMsg');
   if(msg){
     msg.textContent=`➡️ Перенесено задач на завтра: ${unfinished.length}`;
@@ -1371,7 +1323,7 @@ function renderHabDonuts(){
     const pct=Math.round(done/days*100);
     const color=DONUT_COLORS[hi%DONUT_COLORS.length];
     const item=document.createElement('div');item.className='hab-donut-item';
-    item.innerHTML=`${makDonut(pct,done,days,color,72,14,9)}<div class="hab-donut-name">${h}</div>`;
+    item.innerHTML=`${makDonut(pct,done,days,color,72,14,9)}<div class="hab-donut-name">${escapeHTML(h)}</div>`;
     c.appendChild(item);
   });
   if(!anyHab)c.innerHTML='<div style="color:var(--gray-d);font-size:12px;padding:8px 0;">Добавь привычки в разделе управления ниже</div>';
@@ -1396,57 +1348,17 @@ function updProg(){
 // ═══ FINISH DAY → ARCHIVE ═══
 // ═══ ОЧИСТКА МУСОРА В КАЛЕНДАРЕ ═══
 // Удаляет все fromRecur и fromSched события — они будут пересозданы правильно
-function cleanCalendarJunk(){
-  if(!D.calEvents) return;
-  let cleaned = false;
-  Object.keys(D.calEvents).forEach(dk=>{
-    const before = D.calEvents[dk].length;
-    D.calEvents[dk] = D.calEvents[dk].filter(ev => !ev.fromRecur && !ev.fromSched && !ev.fromDayTask);
-    if(D.calEvents[dk].length !== before) cleaned = true;
-    if(D.calEvents[dk].length === 0) delete D.calEvents[dk];
-  });
-  if(cleaned) sv();
-}
+function cleanCalendarJunk(){}
 
 // ═══ АВТОАРХИВ ПРОШЛЫХ ДНЕЙ ═══
 // Запускается при открытии планера — архивирует выполненные задачи за все прошлые дни
 function autoArchivePastDays(){
-  if(!D.days) return;
-  let totalArchived = 0;
-
-  Object.keys(D.days).forEach(dk=>{
-    if(dk >= TK) return; // пропускаем сегодня и будущее
-    const dayData = D.days[dk];
-    if(!dayData) return;
-
-    const tasks = dayData.tasks || [];
-    const recur = dayData.recur || [];
-    const doneTasks = tasks.filter(t=>t.text && t.done);
-    const doneRecur = recur.filter(r=>r.text && r.done);
-    const allDone = [...doneTasks, ...doneRecur];
-
-    if(allDone.length === 0) return;
-
-    // Добавляем в архив
-    if(!D.archive) D.archive = {};
-    if(!D.archive[dk]) D.archive[dk] = [];
-
-    allDone.forEach(t=>{
-      // Не дублируем если уже есть в архиве
-      if(!D.archive[dk].includes(t.text)){
-        D.archive[dk].push(t.text);
-        totalArchived++;
-      }
-    });
-
-    // Убираем выполненные из плавающих задач
-    dayData.tasks = tasks.filter(t=>!t.done);
-    // Сбрасываем чекбоксы повторяющихся (они повторяются каждый день)
-    recur.forEach(r=>{ r.done = false; });
-  });
-
-  if(totalArchived > 0){
-    sv();
+  D.archive ||= {};
+  for(const [dk,day] of Object.entries(D.days||{})){
+    if(dk>=TK) continue;
+    for(const t of [...(day.tasks||[]),...(day.recur||[])]){
+      if(t.done && t.text){D.archive[dk] ||= [];if(!D.archive[dk].includes(t.text))D.archive[dk].push(t.text);}
+    }
   }
 }
 
@@ -1543,7 +1455,7 @@ function renderWeekView(container){
         if(!fd||!D.calEvents[fd])return;
         const ev=D.calEvents[fd].splice(ei,1)[0];
         if(!D.calEvents[dk])D.calEvents[dk]=[];
-        D.calEvents[dk].push(ev);sv();renderCal();
+        D.calEvents[dk].push(ev);moveCalendarSource(fd,dk,ev);sv();refreshUIFromData();
       }
     };
     // Show calEvents for this day
@@ -1559,32 +1471,32 @@ function renderWeekView(container){
       ti.title='Время (например: 14:30) для уведомлений';
       applyTimeStyle(ti, ev.time);
       ti.oninput=()=>{
-        ev.time=ti.value;
+        ev.time=ti.value;updateCalendarSource(dk,ev);
         applyTimeStyle(ti, ev.time);
         if(D.days[dk] && D.days[dk].tasks){
-          const dt = D.days[dk].tasks.find(t=>t.text===ev.text);
+          const dt = D.days[dk].tasks.find(t=>ev.taskId ? t.id===ev.taskId : t.text===ev.text);
           if(dt) dt.time = ev.time;
         }
         sv();
       };
-      ti.onblur=()=>{ ev.time=ti.value; applyTimeStyle(ti, ev.time); sv(); flushSave(); };
-      ti.onchange=()=>{ ev.time=ti.value; applyTimeStyle(ti, ev.time); sv(); flushSave(); };
+      ti.onblur=()=>{ ev.time=ti.value;updateCalendarSource(dk,ev); applyTimeStyle(ti, ev.time); sv(); flushSave(); };
+      ti.onchange=()=>{ ev.time=ti.value;updateCalendarSource(dk,ev); applyTimeStyle(ti, ev.time); sv(); flushSave(); };
 
       const inp=document.createElement('input');inp.className='wti';inp.value=ev.text||'';inp.placeholder='Задача...';
       inp.oninput=()=>{
         const oldText = ev.text;
-        ev.text=inp.value;
+        ev.text=inp.value;updateCalendarSource(dk,ev);
         if(D.days[dk] && D.days[dk].tasks){
-          const dt = D.days[dk].tasks.find(t=>t.text===oldText);
+          const dt = D.days[dk].tasks.find(t=>ev.taskId ? t.id===ev.taskId : t.text===oldText);
           if(dt) dt.text = ev.text;
         }
         sv();
       };
       const ck=document.createElement('div');ck.className='ck'+(ev.done?' on':'');
       ck.style.cssText='width:14px;height:14px;flex-shrink:0;';
-      ck.onclick=()=>{ev.done=!ev.done;sv();renderCal();autoImportFromCalendar();};
+      ck.onclick=()=>{ev.done=!ev.done;updateCalendarSource(dk,ev);sv();refreshUIFromData();};
       const del=document.createElement('span');del.style.cssText='font-size:12px;color:var(--gray-d);cursor:pointer;margin-left:2px;flex-shrink:0;';del.textContent='×';
-      del.onclick=()=>{D.calEvents[dk].splice(ei,1);sv();renderCal();};
+      del.onclick=()=>{deleteCalendarSource(dk,ev);D.calEvents[dk].splice(ei,1);sv();refreshUIFromData();};
       el.append(dot,ti,inp,ck,del);body.appendChild(el);
     });
     const ab=document.createElement('div');ab.style.cssText='font-size:10px;color:var(--gray-d);cursor:pointer;padding:4px 0;';ab.textContent='+ задача';
@@ -1776,7 +1688,7 @@ function renderHabNames(){
     const inp=document.createElement('input');inp.className='qi';inp.style.cssText='flex:1;min-height:32px;';inp.value=h;
     inp.oninput=()=>{D.habits[i]=inp.value;sv();};
     const del=document.createElement('button');del.className='btn';del.textContent='Удалить';del.style.flexShrink='0';
-    del.onclick=()=>{D.habits.splice(i,1);sv();renderHabGrid();renderHabNames();renderTodayHabits();};
+    del.onclick=()=>{D.retiredHabits ||= {}; D.retiredHabits[i]=D.habits[i]; D.habits[i]='';sv();renderHabGrid();renderHabNames();renderTodayHabits();};
     row.append(inp,del);el.appendChild(row);
   });
 }
@@ -1800,7 +1712,7 @@ function renderRes(){
     }
     const pct=Math.round(done/days*100);
     const row=document.createElement('div');row.className='rhabrow';
-    row.innerHTML=`<div class="rn">${h}</div><div class="rv">${done}</div><div class="rp">${pct}%</div>`;
+    row.innerHTML=`<div class="rn">${escapeHTML(h)}</div><div class="rv">${done}</div><div class="rp">${pct}%</div>`;
     rh.appendChild(row);
   });
   // Health averages
@@ -1912,11 +1824,11 @@ function shouldRunToday(sched){
   if(freq==='daily') return true;
 
   if(freq==='weekly'){
-    return t.getDay() === parseInt(sched.weekday||1);
+    return t.getDay() === parseInt(sched.weekday??1);
   }
   if(freq==='biweekly'){
     const diff = Math.round((t-start)/(1000*60*60*24));
-    return diff>=0 && diff%14===0 && t.getDay()===parseInt(sched.weekday||1);
+    return diff>=0 && diff%14===0 && t.getDay()===parseInt(sched.weekday??1);
   }
   if(freq==='monthly'){
     return t.getDate() === parseInt(sched.monthday||1);
@@ -1932,8 +1844,8 @@ function shouldRunToday(sched){
 function freqLabel(sched){
   if(sched.freq==='daily') return 'Каждый день';
   const days=['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
-  if(sched.freq==='weekly') return `Каждую неделю (${days[sched.weekday||1]})`;
-  if(sched.freq==='biweekly') return `Каждые 2 недели (${days[sched.weekday||1]})`;
+  if(sched.freq==='weekly') return `Каждую неделю (${days[sched.weekday??1]})`;
+  if(sched.freq==='biweekly') return `Каждые 2 недели (${days[sched.weekday??1]})`;
   if(sched.freq==='monthly') return `Раз в месяц, ${sched.monthday||1}-го числа`;
   if(sched.freq==='custom') return `Каждые ${sched.customDays||1} дней`;
   return '';
@@ -2047,10 +1959,10 @@ function shouldRunOnDate(sched, date){
   const d = new Date(date); d.setHours(0,0,0,0);
   if(d < start) return false;
   if(freq==='daily') return true;
-  if(freq==='weekly') return d.getDay()===parseInt(sched.weekday||1);
+  if(freq==='weekly') return d.getDay()===parseInt(sched.weekday??1);
   if(freq==='biweekly'){
     const diff=Math.round((d-start)/(1000*60*60*24));
-    return diff>=0 && diff%14===0 && d.getDay()===parseInt(sched.weekday||1);
+    return diff>=0 && diff%14===0 && d.getDay()===parseInt(sched.weekday??1);
   }
   if(freq==='monthly') return d.getDate()===parseInt(sched.monthday||1);
   if(freq==='custom'){
@@ -2099,7 +2011,7 @@ function editSched(idx){
   document.getElementById('schedFormTitle').textContent='Редактировать расписание';
   document.getElementById('schedName').value=s.name||'';
   document.getElementById('schedFreq').value=s.freq||'monthly';
-  document.getElementById('schedWeekday').value=s.weekday||'1';
+  document.getElementById('schedWeekday').value=s.weekday??'1';
   document.getElementById('schedMonthday').value=s.monthday||'';
   document.getElementById('schedCustomDays').value=s.customDays||'';
   document.getElementById('schedStartDate').value=s.startDate||'';
@@ -2110,14 +2022,21 @@ function editSched(idx){
 function deleteSched(idx){
   if(!confirm('Удалить это расписание?')) return;
   getSchedules().splice(idx,1);
-  sv(); renderSchedList();
+  syncSchedulesToCalendar(); sv(); renderSchedList(); renderCal();
 }
 
 function saveSched(){
   const name=document.getElementById('schedName').value.trim();
   if(!name){ alert('Введи название задачи'); return; }
+  const freq=document.getElementById('schedFreq').value;
+  const interval=Number(document.getElementById('schedCustomDays').value);
+  const monthday=Number(document.getElementById('schedMonthday').value);
+  const startValue=document.getElementById('schedStartDate').value || TK;
+  if(!PlannerCore.parseDate(startValue)){alert('Проверь дату начала');return;}
+  if(freq==='custom' && (!Number.isInteger(interval)||interval<1)){alert('Укажи целое число дней от 1');return;}
+  if(freq==='monthly' && (!Number.isInteger(monthday)||monthday<1||monthday>31)){alert('Укажи число месяца от 1 до 31');return;}
   const sched={
-    id: Date.now(),
+    id: crypto.randomUUID(),
     name,
     freq: document.getElementById('schedFreq').value,
     weekday: parseInt(document.getElementById('schedWeekday').value),
@@ -2129,11 +2048,13 @@ function saveSched(){
   };
   const idx=parseInt(document.getElementById('schedEditIdx').value);
   const scheds=getSchedules();
-  if(idx>=0) scheds[idx]=sched;
+  if(idx>=0){const old=scheds[idx];sched.id=old.id; sched.lastAdded=old.lastAdded;
+    for(const [dk,day]of Object.entries(D.days))if(dk>=TK)for(const task of day.tasks||[])if(task.schedId===old.id&&!task.done){if(task.text===old.name)task.text=sched.name;if(task.pri===old.pri)task.pri=sched.pri;}
+    scheds[idx]=sched;}
   else scheds.push(sched);
   sv(); renderSchedList(); resetSchedForm();
   // Сразу проверяем — вдруг надо добавить на сегодня
-  runSchedules(); syncToCalendar(); renderDayTasks(); updProg();
+  runSchedules(); syncToCalendar(); renderDayTasks(); renderCal(); updProg();
 }
 
 function renderSchedList(){
@@ -2147,7 +2068,7 @@ function renderSchedList(){
     const row=document.createElement('div'); row.className='sched-row';
     const pri=['','🔴 ','🟡 ','🟢 '][s.pri||0];
     row.innerHTML=`
-      <div class="sched-name">${pri}${s.name}</div>
+      <div class="sched-name">${pri}${escapeHTML(s.name)}</div>
       <div class="sched-meta">${freqLabel(s)}${s.startDate?' · с '+s.startDate:''}</div>
       <div style="display:flex;gap:6px;margin-top:8px;">
         <button onclick="editSched(${i})" style="font-size:11px;padding:3px 10px;border-radius:6px;border:.5px solid var(--beige);background:#fff;cursor:pointer;color:var(--txt-m);font-family:var(--font-b);">Изменить</button>
@@ -2285,22 +2206,2625 @@ document.getElementById('settingsModal').addEventListener('click',function(e){
   if(e.target===this) closeSettings();
 });
 
-// Сохраняем при закрытии вкладки
-window.addEventListener('beforeunload', ()=>{
-  clearTimeout(syncTimer);
-  if(JSONBIN_KEY && BIN_ID){
-    D._savedAt = Date.now();
-    localStorage.setItem('plannerV2', JSON.stringify(D));
-    // Синхронный запрос при закрытии (sendBeacon надёжнее fetch)
-    const blob = new Blob([JSON.stringify(D)], {type:'application/json'});
-    navigator.sendBeacon(
-      `https://api.jsonbin.io/v3/b/${BIN_ID}`,
-      blob
-    );
-  }
-});
 
-start();
+/* repaired bootstrap appended below */
+</script>
+<style>
+#repairTools{margin:12px auto;padding:14px;max-width:1200px;background:#f5f4ed;border:1px solid #d9ddce;border-radius:10px;font:14px system-ui;color:#39463b}
+#repairTools button,#repairTools input{padding:10px;border:1px solid #c7cfbf;border-radius:7px;background:white;max-width:100%;font:inherit}
+#repairTools label{display:block;margin:8px 0} #repairTools input[type=url]{width:100%} #conflictPanel{border:2px solid #b29454;padding:12px;margin-top:10px}
+.app{grid-template-columns:minmax(0,1fr)}.app>*{min-width:0}.content,.panel,.dg>*{min-width:0}.ginp,.ss,.wti{min-width:0}
+@media(max-width:560px){.content{padding:10px}.topbar{padding:10px;flex-wrap:wrap;gap:8px}.topbar-right{flex-wrap:wrap;gap:8px}.topdate{width:100%}.tabs{max-width:100vw}.dg,.res2col,.gg{grid-template-columns:minmax(0,1fr)}.wg{grid-template-columns:repeat(2,minmax(0,1fr))}.dc{min-width:0}.sl{width:90px}.ss{width:0}.gbar{gap:8px;padding:10px}.ginp{width:0}#repairTools{margin:8px;max-width:calc(100% - 16px)}#repairTools input[type=file]{width:100%}input,textarea,select{font-size:16px!important}.tr2{grid-template-columns:14px 22px 48px minmax(60px,1fr) 16px 20px 20px 22px!important;gap:3px!important}.tr2.rec{grid-template-columns:14px 22px 48px minmax(60px,1fr) 16px 22px!important}.tt{min-width:0}.modal{max-height:90dvh;overflow:auto}}
+</style><script>
+(function(root){
+'use strict';
+const clone=x=>x===undefined?undefined:JSON.parse(JSON.stringify(x));
+const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
+const object=x=>x!==null&&typeof x==='object'&&!Array.isArray(x);
+function parseDate(key){
+ if(typeof key!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(key))return null;
+ const [y,m,d]=key.split('-').map(Number),date=new Date(y,m-1,d);
+ return date.getFullYear()===y&&date.getMonth()===m-1&&date.getDate()===d?date:null;
+}
+function dayNumber(date){return Date.UTC(date.getFullYear(),date.getMonth(),date.getDate())/86400000;}
+function due(rule,date,fallback){
+ const start=parseDate(rule.startDate||fallback);if(!start||date<start)return false;
+ const diff=dayNumber(date)-dayNumber(start),weekday=Number(rule.weekday??1);
+ switch(rule.freq){
+ case 'daily':return true;
+ case 'weekly':return date.getDay()===weekday;
+ case 'biweekly':{const offset=(weekday-start.getDay()+7)%7;return diff>=offset&&(diff-offset)%14===0;}
+ case 'monthly':return date.getDate()===Number(rule.monthday); // Explicit: absent day is skipped.
+ case 'custom':{const n=Number(rule.customDays);return Number.isInteger(n)&&n>0&&diff%n===0;}
+ default:return false;
+ }
+}
+// Three-way merge: object fields and ID-addressed entities merge independently.
+// Arrays without stable IDs remain conservative atomic values.
+// A conflict always blocks upload and retains both snapshots for explicit resolution.
+function merge(base,local,remote,path='',conflicts=[]){
+ if(same(local,base))return {value:clone(remote),conflicts};
+ if(same(remote,base)||same(local,remote))return {value:clone(local),conflicts};
+ if(Array.isArray(local)&&Array.isArray(remote)&&(Array.isArray(base)||base===undefined)){
+  const identified=arr=>arr.every(x=>object(x)&&x.id!==undefined)&&new Set(arr.map(x=>String(x.id))).size===arr.length;
+  const b=base||[];
+  if([b,local,remote].every(identified)){
+   const maps=[b,local,remote].map(arr=>new Map(arr.map(x=>[String(x.id),x])));
+   const values=new Map();
+   for(const id of new Set([...maps[0].keys(),...maps[1].keys(),...maps[2].keys()])){
+    const result=merge(maps[0].get(id),maps[1].get(id),maps[2].get(id),path+'/'+id,conflicts);
+    if(result.value!==undefined)values.set(id,result.value);
+   }
+   const common=b.map(x=>String(x.id)).filter(id=>maps[1].has(id)&&maps[2].has(id));
+   const order=arr=>arr.map(x=>String(x.id)).filter(id=>common.includes(id));
+   const lb=!same(order(local),common),rb=!same(order(remote),common);
+   if(lb&&rb&&!same(order(local),order(remote)))conflicts.push(path+'/$order');
+   const primary=lb?local:remote,secondary=lb?remote:local;
+   const ids=[...new Set([...primary,...secondary].map(x=>String(x.id)))].filter(id=>values.has(id));
+   return {value:ids.map(id=>values.get(id)),conflicts};
+  }
+ }
+ if(object(local)&&object(remote)&&(object(base)||base===undefined)){
+  const out={};for(const k of new Set([...Object.keys(base||{}),...Object.keys(local),...Object.keys(remote)])){
+   if(['__proto__','constructor','prototype'].includes(k))continue;
+   const r=merge(base?.[k],local[k],remote[k],path+'/'+k,conflicts);if(r.value!==undefined)out[k]=r.value;
+  }return {value:out,conflicts};
+ }
+ conflicts.push(path||'/');return {value:clone(local),conflicts};
+}
+function validate(data){
+ if(!object(data)||!object(data.days)||!object(data.calEvents)||!Array.isArray(data.habits)||!object(data.habData))throw Error('Это не резервная копия планера');
+ for(const v of Object.values(data.days)){if(!object(v)||(v.tasks!==undefined&&!Array.isArray(v.tasks))||(v.recur!==undefined&&!Array.isArray(v.recur)))throw Error('Повреждён список задач');}
+ for(const v of Object.values(data.calEvents))if(!Array.isArray(v))throw Error('Повреждён календарь');
+ if(data.schedules!==undefined&&!Array.isArray(data.schedules))throw Error('Повреждены расписания');
+ return data;
+}
+const api={clone,same,parseDate,due,merge,validate};root.PlannerCore=api;
+if(typeof module!=='undefined')module.exports=api;
+})(globalThis);
+
+</script>
+<script>
+//---------------------------------------------------------------------
+//
+// QR Code Generator for JavaScript
+//
+// Copyright (c) 2009 Kazuhiko Arase
+//
+// URL: http://www.d-project.com/
+//
+// Licensed under the MIT license:
+//  http://www.opensource.org/licenses/mit-license.php
+//
+// The word 'QR Code' is registered trademark of
+// DENSO WAVE INCORPORATED
+//  http://www.denso-wave.com/qrcode/faqpatent-e.html
+//
+//---------------------------------------------------------------------
+
+var qrcode = function() {
+
+  //---------------------------------------------------------------------
+  // qrcode
+  //---------------------------------------------------------------------
+
+  /**
+   * qrcode
+   * @param typeNumber 1 to 40
+   * @param errorCorrectionLevel 'L','M','Q','H'
+   */
+  var qrcode = function(typeNumber, errorCorrectionLevel) {
+
+    var PAD0 = 0xEC;
+    var PAD1 = 0x11;
+
+    var _typeNumber = typeNumber;
+    var _errorCorrectionLevel = QRErrorCorrectionLevel[errorCorrectionLevel];
+    var _modules = null;
+    var _moduleCount = 0;
+    var _dataCache = null;
+    var _dataList = [];
+
+    var _this = {};
+
+    var makeImpl = function(test, maskPattern) {
+
+      _moduleCount = _typeNumber * 4 + 17;
+      _modules = function(moduleCount) {
+        var modules = new Array(moduleCount);
+        for (var row = 0; row < moduleCount; row += 1) {
+          modules[row] = new Array(moduleCount);
+          for (var col = 0; col < moduleCount; col += 1) {
+            modules[row][col] = null;
+          }
+        }
+        return modules;
+      }(_moduleCount);
+
+      setupPositionProbePattern(0, 0);
+      setupPositionProbePattern(_moduleCount - 7, 0);
+      setupPositionProbePattern(0, _moduleCount - 7);
+      setupPositionAdjustPattern();
+      setupTimingPattern();
+      setupTypeInfo(test, maskPattern);
+
+      if (_typeNumber >= 7) {
+        setupTypeNumber(test);
+      }
+
+      if (_dataCache == null) {
+        _dataCache = createData(_typeNumber, _errorCorrectionLevel, _dataList);
+      }
+
+      mapData(_dataCache, maskPattern);
+    };
+
+    var setupPositionProbePattern = function(row, col) {
+
+      for (var r = -1; r <= 7; r += 1) {
+
+        if (row + r <= -1 || _moduleCount <= row + r) continue;
+
+        for (var c = -1; c <= 7; c += 1) {
+
+          if (col + c <= -1 || _moduleCount <= col + c) continue;
+
+          if ( (0 <= r && r <= 6 && (c == 0 || c == 6) )
+              || (0 <= c && c <= 6 && (r == 0 || r == 6) )
+              || (2 <= r && r <= 4 && 2 <= c && c <= 4) ) {
+            _modules[row + r][col + c] = true;
+          } else {
+            _modules[row + r][col + c] = false;
+          }
+        }
+      }
+    };
+
+    var getBestMaskPattern = function() {
+
+      var minLostPoint = 0;
+      var pattern = 0;
+
+      for (var i = 0; i < 8; i += 1) {
+
+        makeImpl(true, i);
+
+        var lostPoint = QRUtil.getLostPoint(_this);
+
+        if (i == 0 || minLostPoint > lostPoint) {
+          minLostPoint = lostPoint;
+          pattern = i;
+        }
+      }
+
+      return pattern;
+    };
+
+    var setupTimingPattern = function() {
+
+      for (var r = 8; r < _moduleCount - 8; r += 1) {
+        if (_modules[r][6] != null) {
+          continue;
+        }
+        _modules[r][6] = (r % 2 == 0);
+      }
+
+      for (var c = 8; c < _moduleCount - 8; c += 1) {
+        if (_modules[6][c] != null) {
+          continue;
+        }
+        _modules[6][c] = (c % 2 == 0);
+      }
+    };
+
+    var setupPositionAdjustPattern = function() {
+
+      var pos = QRUtil.getPatternPosition(_typeNumber);
+
+      for (var i = 0; i < pos.length; i += 1) {
+
+        for (var j = 0; j < pos.length; j += 1) {
+
+          var row = pos[i];
+          var col = pos[j];
+
+          if (_modules[row][col] != null) {
+            continue;
+          }
+
+          for (var r = -2; r <= 2; r += 1) {
+
+            for (var c = -2; c <= 2; c += 1) {
+
+              if (r == -2 || r == 2 || c == -2 || c == 2
+                  || (r == 0 && c == 0) ) {
+                _modules[row + r][col + c] = true;
+              } else {
+                _modules[row + r][col + c] = false;
+              }
+            }
+          }
+        }
+      }
+    };
+
+    var setupTypeNumber = function(test) {
+
+      var bits = QRUtil.getBCHTypeNumber(_typeNumber);
+
+      for (var i = 0; i < 18; i += 1) {
+        var mod = (!test && ( (bits >> i) & 1) == 1);
+        _modules[Math.floor(i / 3)][i % 3 + _moduleCount - 8 - 3] = mod;
+      }
+
+      for (var i = 0; i < 18; i += 1) {
+        var mod = (!test && ( (bits >> i) & 1) == 1);
+        _modules[i % 3 + _moduleCount - 8 - 3][Math.floor(i / 3)] = mod;
+      }
+    };
+
+    var setupTypeInfo = function(test, maskPattern) {
+
+      var data = (_errorCorrectionLevel << 3) | maskPattern;
+      var bits = QRUtil.getBCHTypeInfo(data);
+
+      // vertical
+      for (var i = 0; i < 15; i += 1) {
+
+        var mod = (!test && ( (bits >> i) & 1) == 1);
+
+        if (i < 6) {
+          _modules[i][8] = mod;
+        } else if (i < 8) {
+          _modules[i + 1][8] = mod;
+        } else {
+          _modules[_moduleCount - 15 + i][8] = mod;
+        }
+      }
+
+      // horizontal
+      for (var i = 0; i < 15; i += 1) {
+
+        var mod = (!test && ( (bits >> i) & 1) == 1);
+
+        if (i < 8) {
+          _modules[8][_moduleCount - i - 1] = mod;
+        } else if (i < 9) {
+          _modules[8][15 - i - 1 + 1] = mod;
+        } else {
+          _modules[8][15 - i - 1] = mod;
+        }
+      }
+
+      // fixed module
+      _modules[_moduleCount - 8][8] = (!test);
+    };
+
+    var mapData = function(data, maskPattern) {
+
+      var inc = -1;
+      var row = _moduleCount - 1;
+      var bitIndex = 7;
+      var byteIndex = 0;
+      var maskFunc = QRUtil.getMaskFunction(maskPattern);
+
+      for (var col = _moduleCount - 1; col > 0; col -= 2) {
+
+        if (col == 6) col -= 1;
+
+        while (true) {
+
+          for (var c = 0; c < 2; c += 1) {
+
+            if (_modules[row][col - c] == null) {
+
+              var dark = false;
+
+              if (byteIndex < data.length) {
+                dark = ( ( (data[byteIndex] >>> bitIndex) & 1) == 1);
+              }
+
+              var mask = maskFunc(row, col - c);
+
+              if (mask) {
+                dark = !dark;
+              }
+
+              _modules[row][col - c] = dark;
+              bitIndex -= 1;
+
+              if (bitIndex == -1) {
+                byteIndex += 1;
+                bitIndex = 7;
+              }
+            }
+          }
+
+          row += inc;
+
+          if (row < 0 || _moduleCount <= row) {
+            row -= inc;
+            inc = -inc;
+            break;
+          }
+        }
+      }
+    };
+
+    var createBytes = function(buffer, rsBlocks) {
+
+      var offset = 0;
+
+      var maxDcCount = 0;
+      var maxEcCount = 0;
+
+      var dcdata = new Array(rsBlocks.length);
+      var ecdata = new Array(rsBlocks.length);
+
+      for (var r = 0; r < rsBlocks.length; r += 1) {
+
+        var dcCount = rsBlocks[r].dataCount;
+        var ecCount = rsBlocks[r].totalCount - dcCount;
+
+        maxDcCount = Math.max(maxDcCount, dcCount);
+        maxEcCount = Math.max(maxEcCount, ecCount);
+
+        dcdata[r] = new Array(dcCount);
+
+        for (var i = 0; i < dcdata[r].length; i += 1) {
+          dcdata[r][i] = 0xff & buffer.getBuffer()[i + offset];
+        }
+        offset += dcCount;
+
+        var rsPoly = QRUtil.getErrorCorrectPolynomial(ecCount);
+        var rawPoly = qrPolynomial(dcdata[r], rsPoly.getLength() - 1);
+
+        var modPoly = rawPoly.mod(rsPoly);
+        ecdata[r] = new Array(rsPoly.getLength() - 1);
+        for (var i = 0; i < ecdata[r].length; i += 1) {
+          var modIndex = i + modPoly.getLength() - ecdata[r].length;
+          ecdata[r][i] = (modIndex >= 0)? modPoly.getAt(modIndex) : 0;
+        }
+      }
+
+      var totalCodeCount = 0;
+      for (var i = 0; i < rsBlocks.length; i += 1) {
+        totalCodeCount += rsBlocks[i].totalCount;
+      }
+
+      var data = new Array(totalCodeCount);
+      var index = 0;
+
+      for (var i = 0; i < maxDcCount; i += 1) {
+        for (var r = 0; r < rsBlocks.length; r += 1) {
+          if (i < dcdata[r].length) {
+            data[index] = dcdata[r][i];
+            index += 1;
+          }
+        }
+      }
+
+      for (var i = 0; i < maxEcCount; i += 1) {
+        for (var r = 0; r < rsBlocks.length; r += 1) {
+          if (i < ecdata[r].length) {
+            data[index] = ecdata[r][i];
+            index += 1;
+          }
+        }
+      }
+
+      return data;
+    };
+
+    var createData = function(typeNumber, errorCorrectionLevel, dataList) {
+
+      var rsBlocks = QRRSBlock.getRSBlocks(typeNumber, errorCorrectionLevel);
+
+      var buffer = qrBitBuffer();
+
+      for (var i = 0; i < dataList.length; i += 1) {
+        var data = dataList[i];
+        buffer.put(data.getMode(), 4);
+        buffer.put(data.getLength(), QRUtil.getLengthInBits(data.getMode(), typeNumber) );
+        data.write(buffer);
+      }
+
+      // calc num max data.
+      var totalDataCount = 0;
+      for (var i = 0; i < rsBlocks.length; i += 1) {
+        totalDataCount += rsBlocks[i].dataCount;
+      }
+
+      if (buffer.getLengthInBits() > totalDataCount * 8) {
+        throw 'code length overflow. ('
+          + buffer.getLengthInBits()
+          + '>'
+          + totalDataCount * 8
+          + ')';
+      }
+
+      // end code
+      if (buffer.getLengthInBits() + 4 <= totalDataCount * 8) {
+        buffer.put(0, 4);
+      }
+
+      // padding
+      while (buffer.getLengthInBits() % 8 != 0) {
+        buffer.putBit(false);
+      }
+
+      // padding
+      while (true) {
+
+        if (buffer.getLengthInBits() >= totalDataCount * 8) {
+          break;
+        }
+        buffer.put(PAD0, 8);
+
+        if (buffer.getLengthInBits() >= totalDataCount * 8) {
+          break;
+        }
+        buffer.put(PAD1, 8);
+      }
+
+      return createBytes(buffer, rsBlocks);
+    };
+
+    _this.addData = function(data, mode) {
+
+      mode = mode || 'Byte';
+
+      var newData = null;
+
+      switch(mode) {
+      case 'Numeric' :
+        newData = qrNumber(data);
+        break;
+      case 'Alphanumeric' :
+        newData = qrAlphaNum(data);
+        break;
+      case 'Byte' :
+        newData = qr8BitByte(data);
+        break;
+      case 'Kanji' :
+        newData = qrKanji(data);
+        break;
+      default :
+        throw 'mode:' + mode;
+      }
+
+      _dataList.push(newData);
+      _dataCache = null;
+    };
+
+    _this.isDark = function(row, col) {
+      if (row < 0 || _moduleCount <= row || col < 0 || _moduleCount <= col) {
+        throw row + ',' + col;
+      }
+      return _modules[row][col];
+    };
+
+    _this.getModuleCount = function() {
+      return _moduleCount;
+    };
+
+    _this.make = function() {
+      if (_typeNumber < 1) {
+        var typeNumber = 1;
+
+        for (; typeNumber < 40; typeNumber++) {
+          var rsBlocks = QRRSBlock.getRSBlocks(typeNumber, _errorCorrectionLevel);
+          var buffer = qrBitBuffer();
+
+          for (var i = 0; i < _dataList.length; i++) {
+            var data = _dataList[i];
+            buffer.put(data.getMode(), 4);
+            buffer.put(data.getLength(), QRUtil.getLengthInBits(data.getMode(), typeNumber) );
+            data.write(buffer);
+          }
+
+          var totalDataCount = 0;
+          for (var i = 0; i < rsBlocks.length; i++) {
+            totalDataCount += rsBlocks[i].dataCount;
+          }
+
+          if (buffer.getLengthInBits() <= totalDataCount * 8) {
+            break;
+          }
+        }
+
+        _typeNumber = typeNumber;
+      }
+
+      makeImpl(false, getBestMaskPattern() );
+    };
+
+    _this.createTableTag = function(cellSize, margin) {
+
+      cellSize = cellSize || 2;
+      margin = (typeof margin == 'undefined')? cellSize * 4 : margin;
+
+      var qrHtml = '';
+
+      qrHtml += '<table style="';
+      qrHtml += ' border-width: 0px; border-style: none;';
+      qrHtml += ' border-collapse: collapse;';
+      qrHtml += ' padding: 0px; margin: ' + margin + 'px;';
+      qrHtml += '">';
+      qrHtml += '<tbody>';
+
+      for (var r = 0; r < _this.getModuleCount(); r += 1) {
+
+        qrHtml += '<tr>';
+
+        for (var c = 0; c < _this.getModuleCount(); c += 1) {
+          qrHtml += '<td style="';
+          qrHtml += ' border-width: 0px; border-style: none;';
+          qrHtml += ' border-collapse: collapse;';
+          qrHtml += ' padding: 0px; margin: 0px;';
+          qrHtml += ' width: ' + cellSize + 'px;';
+          qrHtml += ' height: ' + cellSize + 'px;';
+          qrHtml += ' background-color: ';
+          qrHtml += _this.isDark(r, c)? '#000000' : '#ffffff';
+          qrHtml += ';';
+          qrHtml += '"/>';
+        }
+
+        qrHtml += '</tr>';
+      }
+
+      qrHtml += '</tbody>';
+      qrHtml += '</table>';
+
+      return qrHtml;
+    };
+
+    _this.createSvgTag = function(cellSize, margin, alt, title) {
+
+      var opts = {};
+      if (typeof arguments[0] == 'object') {
+        // Called by options.
+        opts = arguments[0];
+        // overwrite cellSize and margin.
+        cellSize = opts.cellSize;
+        margin = opts.margin;
+        alt = opts.alt;
+        title = opts.title;
+      }
+
+      cellSize = cellSize || 2;
+      margin = (typeof margin == 'undefined')? cellSize * 4 : margin;
+
+      // Compose alt property surrogate
+      alt = (typeof alt === 'string') ? {text: alt} : alt || {};
+      alt.text = alt.text || null;
+      alt.id = (alt.text) ? alt.id || 'qrcode-description' : null;
+
+      // Compose title property surrogate
+      title = (typeof title === 'string') ? {text: title} : title || {};
+      title.text = title.text || null;
+      title.id = (title.text) ? title.id || 'qrcode-title' : null;
+
+      var size = _this.getModuleCount() * cellSize + margin * 2;
+      var c, mc, r, mr, qrSvg='', rect;
+
+      rect = 'l' + cellSize + ',0 0,' + cellSize +
+        ' -' + cellSize + ',0 0,-' + cellSize + 'z ';
+
+      qrSvg += '<svg version="1.1" xmlns="http://www.w3.org/2000/svg"';
+      qrSvg += !opts.scalable ? ' width="' + size + 'px" height="' + size + 'px"' : '';
+      qrSvg += ' viewBox="0 0 ' + size + ' ' + size + '" ';
+      qrSvg += ' preserveAspectRatio="xMinYMin meet"';
+      qrSvg += (title.text || alt.text) ? ' role="img" aria-labelledby="' +
+          escapeXml([title.id, alt.id].join(' ').trim() ) + '"' : '';
+      qrSvg += '>';
+      qrSvg += (title.text) ? '<title id="' + escapeXml(title.id) + '">' +
+          escapeXml(title.text) + '</title>' : '';
+      qrSvg += (alt.text) ? '<description id="' + escapeXml(alt.id) + '">' +
+          escapeXml(alt.text) + '</description>' : '';
+      qrSvg += '<rect width="100%" height="100%" fill="white" cx="0" cy="0"/>';
+      qrSvg += '<path d="';
+
+      for (r = 0; r < _this.getModuleCount(); r += 1) {
+        mr = r * cellSize + margin;
+        for (c = 0; c < _this.getModuleCount(); c += 1) {
+          if (_this.isDark(r, c) ) {
+            mc = c*cellSize+margin;
+            qrSvg += 'M' + mc + ',' + mr + rect;
+          }
+        }
+      }
+
+      qrSvg += '" stroke="transparent" fill="black"/>';
+      qrSvg += '</svg>';
+
+      return qrSvg;
+    };
+
+    _this.createDataURL = function(cellSize, margin) {
+
+      cellSize = cellSize || 2;
+      margin = (typeof margin == 'undefined')? cellSize * 4 : margin;
+
+      var size = _this.getModuleCount() * cellSize + margin * 2;
+      var min = margin;
+      var max = size - margin;
+
+      return createDataURL(size, size, function(x, y) {
+        if (min <= x && x < max && min <= y && y < max) {
+          var c = Math.floor( (x - min) / cellSize);
+          var r = Math.floor( (y - min) / cellSize);
+          return _this.isDark(r, c)? 0 : 1;
+        } else {
+          return 1;
+        }
+      } );
+    };
+
+    _this.createImgTag = function(cellSize, margin, alt) {
+
+      cellSize = cellSize || 2;
+      margin = (typeof margin == 'undefined')? cellSize * 4 : margin;
+
+      var size = _this.getModuleCount() * cellSize + margin * 2;
+
+      var img = '';
+      img += '<img';
+      img += '\u0020src="';
+      img += _this.createDataURL(cellSize, margin);
+      img += '"';
+      img += '\u0020width="';
+      img += size;
+      img += '"';
+      img += '\u0020height="';
+      img += size;
+      img += '"';
+      if (alt) {
+        img += '\u0020alt="';
+        img += escapeXml(alt);
+        img += '"';
+      }
+      img += '/>';
+
+      return img;
+    };
+
+    var escapeXml = function(s) {
+      var escaped = '';
+      for (var i = 0; i < s.length; i += 1) {
+        var c = s.charAt(i);
+        switch(c) {
+        case '<': escaped += '&lt;'; break;
+        case '>': escaped += '&gt;'; break;
+        case '&': escaped += '&amp;'; break;
+        case '"': escaped += '&quot;'; break;
+        default : escaped += c; break;
+        }
+      }
+      return escaped;
+    };
+
+    var _createHalfASCII = function(margin) {
+      var cellSize = 1;
+      margin = (typeof margin == 'undefined')? cellSize * 2 : margin;
+
+      var size = _this.getModuleCount() * cellSize + margin * 2;
+      var min = margin;
+      var max = size - margin;
+
+      var y, x, r1, r2, p;
+
+      var blocks = {
+        '██': '█',
+        '█ ': '▀',
+        ' █': '▄',
+        '  ': ' '
+      };
+
+      var blocksLastLineNoMargin = {
+        '██': '▀',
+        '█ ': '▀',
+        ' █': ' ',
+        '  ': ' '
+      };
+
+      var ascii = '';
+      for (y = 0; y < size; y += 2) {
+        r1 = Math.floor((y - min) / cellSize);
+        r2 = Math.floor((y + 1 - min) / cellSize);
+        for (x = 0; x < size; x += 1) {
+          p = '█';
+
+          if (min <= x && x < max && min <= y && y < max && _this.isDark(r1, Math.floor((x - min) / cellSize))) {
+            p = ' ';
+          }
+
+          if (min <= x && x < max && min <= y+1 && y+1 < max && _this.isDark(r2, Math.floor((x - min) / cellSize))) {
+            p += ' ';
+          }
+          else {
+            p += '█';
+          }
+
+          // Output 2 characters per pixel, to create full square. 1 character per pixels gives only half width of square.
+          ascii += (margin < 1 && y+1 >= max) ? blocksLastLineNoMargin[p] : blocks[p];
+        }
+
+        ascii += '\n';
+      }
+
+      if (size % 2 && margin > 0) {
+        return ascii.substring(0, ascii.length - size - 1) + Array(size+1).join('▀');
+      }
+
+      return ascii.substring(0, ascii.length-1);
+    };
+
+    _this.createASCII = function(cellSize, margin) {
+      cellSize = cellSize || 1;
+
+      if (cellSize < 2) {
+        return _createHalfASCII(margin);
+      }
+
+      cellSize -= 1;
+      margin = (typeof margin == 'undefined')? cellSize * 2 : margin;
+
+      var size = _this.getModuleCount() * cellSize + margin * 2;
+      var min = margin;
+      var max = size - margin;
+
+      var y, x, r, p;
+
+      var white = Array(cellSize+1).join('██');
+      var black = Array(cellSize+1).join('  ');
+
+      var ascii = '';
+      var line = '';
+      for (y = 0; y < size; y += 1) {
+        r = Math.floor( (y - min) / cellSize);
+        line = '';
+        for (x = 0; x < size; x += 1) {
+          p = 1;
+
+          if (min <= x && x < max && min <= y && y < max && _this.isDark(r, Math.floor((x - min) / cellSize))) {
+            p = 0;
+          }
+
+          // Output 2 characters per pixel, to create full square. 1 character per pixels gives only half width of square.
+          line += p ? white : black;
+        }
+
+        for (r = 0; r < cellSize; r += 1) {
+          ascii += line + '\n';
+        }
+      }
+
+      return ascii.substring(0, ascii.length-1);
+    };
+
+    _this.renderTo2dContext = function(context, cellSize) {
+      cellSize = cellSize || 2;
+      var length = _this.getModuleCount();
+      for (var row = 0; row < length; row++) {
+        for (var col = 0; col < length; col++) {
+          context.fillStyle = _this.isDark(row, col) ? 'black' : 'white';
+          context.fillRect(col * cellSize, row * cellSize, cellSize, cellSize);
+        }
+      }
+    }
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // qrcode.stringToBytes
+  //---------------------------------------------------------------------
+
+  qrcode.stringToBytesFuncs = {
+    'default' : function(s) {
+      var bytes = [];
+      for (var i = 0; i < s.length; i += 1) {
+        var c = s.charCodeAt(i);
+        bytes.push(c & 0xff);
+      }
+      return bytes;
+    }
+  };
+
+  qrcode.stringToBytes = qrcode.stringToBytesFuncs['default'];
+
+  //---------------------------------------------------------------------
+  // qrcode.createStringToBytes
+  //---------------------------------------------------------------------
+
+  /**
+   * @param unicodeData base64 string of byte array.
+   * [16bit Unicode],[16bit Bytes], ...
+   * @param numChars
+   */
+  qrcode.createStringToBytes = function(unicodeData, numChars) {
+
+    // create conversion map.
+
+    var unicodeMap = function() {
+
+      var bin = base64DecodeInputStream(unicodeData);
+      var read = function() {
+        var b = bin.read();
+        if (b == -1) throw 'eof';
+        return b;
+      };
+
+      var count = 0;
+      var unicodeMap = {};
+      while (true) {
+        var b0 = bin.read();
+        if (b0 == -1) break;
+        var b1 = read();
+        var b2 = read();
+        var b3 = read();
+        var k = String.fromCharCode( (b0 << 8) | b1);
+        var v = (b2 << 8) | b3;
+        unicodeMap[k] = v;
+        count += 1;
+      }
+      if (count != numChars) {
+        throw count + ' != ' + numChars;
+      }
+
+      return unicodeMap;
+    }();
+
+    var unknownChar = '?'.charCodeAt(0);
+
+    return function(s) {
+      var bytes = [];
+      for (var i = 0; i < s.length; i += 1) {
+        var c = s.charCodeAt(i);
+        if (c < 128) {
+          bytes.push(c);
+        } else {
+          var b = unicodeMap[s.charAt(i)];
+          if (typeof b == 'number') {
+            if ( (b & 0xff) == b) {
+              // 1byte
+              bytes.push(b);
+            } else {
+              // 2bytes
+              bytes.push(b >>> 8);
+              bytes.push(b & 0xff);
+            }
+          } else {
+            bytes.push(unknownChar);
+          }
+        }
+      }
+      return bytes;
+    };
+  };
+
+  //---------------------------------------------------------------------
+  // QRMode
+  //---------------------------------------------------------------------
+
+  var QRMode = {
+    MODE_NUMBER :    1 << 0,
+    MODE_ALPHA_NUM : 1 << 1,
+    MODE_8BIT_BYTE : 1 << 2,
+    MODE_KANJI :     1 << 3
+  };
+
+  //---------------------------------------------------------------------
+  // QRErrorCorrectionLevel
+  //---------------------------------------------------------------------
+
+  var QRErrorCorrectionLevel = {
+    L : 1,
+    M : 0,
+    Q : 3,
+    H : 2
+  };
+
+  //---------------------------------------------------------------------
+  // QRMaskPattern
+  //---------------------------------------------------------------------
+
+  var QRMaskPattern = {
+    PATTERN000 : 0,
+    PATTERN001 : 1,
+    PATTERN010 : 2,
+    PATTERN011 : 3,
+    PATTERN100 : 4,
+    PATTERN101 : 5,
+    PATTERN110 : 6,
+    PATTERN111 : 7
+  };
+
+  //---------------------------------------------------------------------
+  // QRUtil
+  //---------------------------------------------------------------------
+
+  var QRUtil = function() {
+
+    var PATTERN_POSITION_TABLE = [
+      [],
+      [6, 18],
+      [6, 22],
+      [6, 26],
+      [6, 30],
+      [6, 34],
+      [6, 22, 38],
+      [6, 24, 42],
+      [6, 26, 46],
+      [6, 28, 50],
+      [6, 30, 54],
+      [6, 32, 58],
+      [6, 34, 62],
+      [6, 26, 46, 66],
+      [6, 26, 48, 70],
+      [6, 26, 50, 74],
+      [6, 30, 54, 78],
+      [6, 30, 56, 82],
+      [6, 30, 58, 86],
+      [6, 34, 62, 90],
+      [6, 28, 50, 72, 94],
+      [6, 26, 50, 74, 98],
+      [6, 30, 54, 78, 102],
+      [6, 28, 54, 80, 106],
+      [6, 32, 58, 84, 110],
+      [6, 30, 58, 86, 114],
+      [6, 34, 62, 90, 118],
+      [6, 26, 50, 74, 98, 122],
+      [6, 30, 54, 78, 102, 126],
+      [6, 26, 52, 78, 104, 130],
+      [6, 30, 56, 82, 108, 134],
+      [6, 34, 60, 86, 112, 138],
+      [6, 30, 58, 86, 114, 142],
+      [6, 34, 62, 90, 118, 146],
+      [6, 30, 54, 78, 102, 126, 150],
+      [6, 24, 50, 76, 102, 128, 154],
+      [6, 28, 54, 80, 106, 132, 158],
+      [6, 32, 58, 84, 110, 136, 162],
+      [6, 26, 54, 82, 110, 138, 166],
+      [6, 30, 58, 86, 114, 142, 170]
+    ];
+    var G15 = (1 << 10) | (1 << 8) | (1 << 5) | (1 << 4) | (1 << 2) | (1 << 1) | (1 << 0);
+    var G18 = (1 << 12) | (1 << 11) | (1 << 10) | (1 << 9) | (1 << 8) | (1 << 5) | (1 << 2) | (1 << 0);
+    var G15_MASK = (1 << 14) | (1 << 12) | (1 << 10) | (1 << 4) | (1 << 1);
+
+    var _this = {};
+
+    var getBCHDigit = function(data) {
+      var digit = 0;
+      while (data != 0) {
+        digit += 1;
+        data >>>= 1;
+      }
+      return digit;
+    };
+
+    _this.getBCHTypeInfo = function(data) {
+      var d = data << 10;
+      while (getBCHDigit(d) - getBCHDigit(G15) >= 0) {
+        d ^= (G15 << (getBCHDigit(d) - getBCHDigit(G15) ) );
+      }
+      return ( (data << 10) | d) ^ G15_MASK;
+    };
+
+    _this.getBCHTypeNumber = function(data) {
+      var d = data << 12;
+      while (getBCHDigit(d) - getBCHDigit(G18) >= 0) {
+        d ^= (G18 << (getBCHDigit(d) - getBCHDigit(G18) ) );
+      }
+      return (data << 12) | d;
+    };
+
+    _this.getPatternPosition = function(typeNumber) {
+      return PATTERN_POSITION_TABLE[typeNumber - 1];
+    };
+
+    _this.getMaskFunction = function(maskPattern) {
+
+      switch (maskPattern) {
+
+      case QRMaskPattern.PATTERN000 :
+        return function(i, j) { return (i + j) % 2 == 0; };
+      case QRMaskPattern.PATTERN001 :
+        return function(i, j) { return i % 2 == 0; };
+      case QRMaskPattern.PATTERN010 :
+        return function(i, j) { return j % 3 == 0; };
+      case QRMaskPattern.PATTERN011 :
+        return function(i, j) { return (i + j) % 3 == 0; };
+      case QRMaskPattern.PATTERN100 :
+        return function(i, j) { return (Math.floor(i / 2) + Math.floor(j / 3) ) % 2 == 0; };
+      case QRMaskPattern.PATTERN101 :
+        return function(i, j) { return (i * j) % 2 + (i * j) % 3 == 0; };
+      case QRMaskPattern.PATTERN110 :
+        return function(i, j) { return ( (i * j) % 2 + (i * j) % 3) % 2 == 0; };
+      case QRMaskPattern.PATTERN111 :
+        return function(i, j) { return ( (i * j) % 3 + (i + j) % 2) % 2 == 0; };
+
+      default :
+        throw 'bad maskPattern:' + maskPattern;
+      }
+    };
+
+    _this.getErrorCorrectPolynomial = function(errorCorrectLength) {
+      var a = qrPolynomial([1], 0);
+      for (var i = 0; i < errorCorrectLength; i += 1) {
+        a = a.multiply(qrPolynomial([1, QRMath.gexp(i)], 0) );
+      }
+      return a;
+    };
+
+    _this.getLengthInBits = function(mode, type) {
+
+      if (1 <= type && type < 10) {
+
+        // 1 - 9
+
+        switch(mode) {
+        case QRMode.MODE_NUMBER    : return 10;
+        case QRMode.MODE_ALPHA_NUM : return 9;
+        case QRMode.MODE_8BIT_BYTE : return 8;
+        case QRMode.MODE_KANJI     : return 8;
+        default :
+          throw 'mode:' + mode;
+        }
+
+      } else if (type < 27) {
+
+        // 10 - 26
+
+        switch(mode) {
+        case QRMode.MODE_NUMBER    : return 12;
+        case QRMode.MODE_ALPHA_NUM : return 11;
+        case QRMode.MODE_8BIT_BYTE : return 16;
+        case QRMode.MODE_KANJI     : return 10;
+        default :
+          throw 'mode:' + mode;
+        }
+
+      } else if (type < 41) {
+
+        // 27 - 40
+
+        switch(mode) {
+        case QRMode.MODE_NUMBER    : return 14;
+        case QRMode.MODE_ALPHA_NUM : return 13;
+        case QRMode.MODE_8BIT_BYTE : return 16;
+        case QRMode.MODE_KANJI     : return 12;
+        default :
+          throw 'mode:' + mode;
+        }
+
+      } else {
+        throw 'type:' + type;
+      }
+    };
+
+    _this.getLostPoint = function(qrcode) {
+
+      var moduleCount = qrcode.getModuleCount();
+
+      var lostPoint = 0;
+
+      // LEVEL1
+
+      for (var row = 0; row < moduleCount; row += 1) {
+        for (var col = 0; col < moduleCount; col += 1) {
+
+          var sameCount = 0;
+          var dark = qrcode.isDark(row, col);
+
+          for (var r = -1; r <= 1; r += 1) {
+
+            if (row + r < 0 || moduleCount <= row + r) {
+              continue;
+            }
+
+            for (var c = -1; c <= 1; c += 1) {
+
+              if (col + c < 0 || moduleCount <= col + c) {
+                continue;
+              }
+
+              if (r == 0 && c == 0) {
+                continue;
+              }
+
+              if (dark == qrcode.isDark(row + r, col + c) ) {
+                sameCount += 1;
+              }
+            }
+          }
+
+          if (sameCount > 5) {
+            lostPoint += (3 + sameCount - 5);
+          }
+        }
+      };
+
+      // LEVEL2
+
+      for (var row = 0; row < moduleCount - 1; row += 1) {
+        for (var col = 0; col < moduleCount - 1; col += 1) {
+          var count = 0;
+          if (qrcode.isDark(row, col) ) count += 1;
+          if (qrcode.isDark(row + 1, col) ) count += 1;
+          if (qrcode.isDark(row, col + 1) ) count += 1;
+          if (qrcode.isDark(row + 1, col + 1) ) count += 1;
+          if (count == 0 || count == 4) {
+            lostPoint += 3;
+          }
+        }
+      }
+
+      // LEVEL3
+
+      for (var row = 0; row < moduleCount; row += 1) {
+        for (var col = 0; col < moduleCount - 6; col += 1) {
+          if (qrcode.isDark(row, col)
+              && !qrcode.isDark(row, col + 1)
+              &&  qrcode.isDark(row, col + 2)
+              &&  qrcode.isDark(row, col + 3)
+              &&  qrcode.isDark(row, col + 4)
+              && !qrcode.isDark(row, col + 5)
+              &&  qrcode.isDark(row, col + 6) ) {
+            lostPoint += 40;
+          }
+        }
+      }
+
+      for (var col = 0; col < moduleCount; col += 1) {
+        for (var row = 0; row < moduleCount - 6; row += 1) {
+          if (qrcode.isDark(row, col)
+              && !qrcode.isDark(row + 1, col)
+              &&  qrcode.isDark(row + 2, col)
+              &&  qrcode.isDark(row + 3, col)
+              &&  qrcode.isDark(row + 4, col)
+              && !qrcode.isDark(row + 5, col)
+              &&  qrcode.isDark(row + 6, col) ) {
+            lostPoint += 40;
+          }
+        }
+      }
+
+      // LEVEL4
+
+      var darkCount = 0;
+
+      for (var col = 0; col < moduleCount; col += 1) {
+        for (var row = 0; row < moduleCount; row += 1) {
+          if (qrcode.isDark(row, col) ) {
+            darkCount += 1;
+          }
+        }
+      }
+
+      var ratio = Math.abs(100 * darkCount / moduleCount / moduleCount - 50) / 5;
+      lostPoint += ratio * 10;
+
+      return lostPoint;
+    };
+
+    return _this;
+  }();
+
+  //---------------------------------------------------------------------
+  // QRMath
+  //---------------------------------------------------------------------
+
+  var QRMath = function() {
+
+    var EXP_TABLE = new Array(256);
+    var LOG_TABLE = new Array(256);
+
+    // initialize tables
+    for (var i = 0; i < 8; i += 1) {
+      EXP_TABLE[i] = 1 << i;
+    }
+    for (var i = 8; i < 256; i += 1) {
+      EXP_TABLE[i] = EXP_TABLE[i - 4]
+        ^ EXP_TABLE[i - 5]
+        ^ EXP_TABLE[i - 6]
+        ^ EXP_TABLE[i - 8];
+    }
+    for (var i = 0; i < 255; i += 1) {
+      LOG_TABLE[EXP_TABLE[i] ] = i;
+    }
+
+    var _this = {};
+
+    _this.glog = function(n) {
+
+      if (n < 1) {
+        throw 'glog(' + n + ')';
+      }
+
+      return LOG_TABLE[n];
+    };
+
+    _this.gexp = function(n) {
+
+      while (n < 0) {
+        n += 255;
+      }
+
+      while (n >= 256) {
+        n -= 255;
+      }
+
+      return EXP_TABLE[n];
+    };
+
+    return _this;
+  }();
+
+  //---------------------------------------------------------------------
+  // qrPolynomial
+  //---------------------------------------------------------------------
+
+  function qrPolynomial(num, shift) {
+
+    if (typeof num.length == 'undefined') {
+      throw num.length + '/' + shift;
+    }
+
+    var _num = function() {
+      var offset = 0;
+      while (offset < num.length && num[offset] == 0) {
+        offset += 1;
+      }
+      var _num = new Array(num.length - offset + shift);
+      for (var i = 0; i < num.length - offset; i += 1) {
+        _num[i] = num[i + offset];
+      }
+      return _num;
+    }();
+
+    var _this = {};
+
+    _this.getAt = function(index) {
+      return _num[index];
+    };
+
+    _this.getLength = function() {
+      return _num.length;
+    };
+
+    _this.multiply = function(e) {
+
+      var num = new Array(_this.getLength() + e.getLength() - 1);
+
+      for (var i = 0; i < _this.getLength(); i += 1) {
+        for (var j = 0; j < e.getLength(); j += 1) {
+          num[i + j] ^= QRMath.gexp(QRMath.glog(_this.getAt(i) ) + QRMath.glog(e.getAt(j) ) );
+        }
+      }
+
+      return qrPolynomial(num, 0);
+    };
+
+    _this.mod = function(e) {
+
+      if (_this.getLength() - e.getLength() < 0) {
+        return _this;
+      }
+
+      var ratio = QRMath.glog(_this.getAt(0) ) - QRMath.glog(e.getAt(0) );
+
+      var num = new Array(_this.getLength() );
+      for (var i = 0; i < _this.getLength(); i += 1) {
+        num[i] = _this.getAt(i);
+      }
+
+      for (var i = 0; i < e.getLength(); i += 1) {
+        num[i] ^= QRMath.gexp(QRMath.glog(e.getAt(i) ) + ratio);
+      }
+
+      // recursive call
+      return qrPolynomial(num, 0).mod(e);
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // QRRSBlock
+  //---------------------------------------------------------------------
+
+  var QRRSBlock = function() {
+
+    var RS_BLOCK_TABLE = [
+
+      // L
+      // M
+      // Q
+      // H
+
+      // 1
+      [1, 26, 19],
+      [1, 26, 16],
+      [1, 26, 13],
+      [1, 26, 9],
+
+      // 2
+      [1, 44, 34],
+      [1, 44, 28],
+      [1, 44, 22],
+      [1, 44, 16],
+
+      // 3
+      [1, 70, 55],
+      [1, 70, 44],
+      [2, 35, 17],
+      [2, 35, 13],
+
+      // 4
+      [1, 100, 80],
+      [2, 50, 32],
+      [2, 50, 24],
+      [4, 25, 9],
+
+      // 5
+      [1, 134, 108],
+      [2, 67, 43],
+      [2, 33, 15, 2, 34, 16],
+      [2, 33, 11, 2, 34, 12],
+
+      // 6
+      [2, 86, 68],
+      [4, 43, 27],
+      [4, 43, 19],
+      [4, 43, 15],
+
+      // 7
+      [2, 98, 78],
+      [4, 49, 31],
+      [2, 32, 14, 4, 33, 15],
+      [4, 39, 13, 1, 40, 14],
+
+      // 8
+      [2, 121, 97],
+      [2, 60, 38, 2, 61, 39],
+      [4, 40, 18, 2, 41, 19],
+      [4, 40, 14, 2, 41, 15],
+
+      // 9
+      [2, 146, 116],
+      [3, 58, 36, 2, 59, 37],
+      [4, 36, 16, 4, 37, 17],
+      [4, 36, 12, 4, 37, 13],
+
+      // 10
+      [2, 86, 68, 2, 87, 69],
+      [4, 69, 43, 1, 70, 44],
+      [6, 43, 19, 2, 44, 20],
+      [6, 43, 15, 2, 44, 16],
+
+      // 11
+      [4, 101, 81],
+      [1, 80, 50, 4, 81, 51],
+      [4, 50, 22, 4, 51, 23],
+      [3, 36, 12, 8, 37, 13],
+
+      // 12
+      [2, 116, 92, 2, 117, 93],
+      [6, 58, 36, 2, 59, 37],
+      [4, 46, 20, 6, 47, 21],
+      [7, 42, 14, 4, 43, 15],
+
+      // 13
+      [4, 133, 107],
+      [8, 59, 37, 1, 60, 38],
+      [8, 44, 20, 4, 45, 21],
+      [12, 33, 11, 4, 34, 12],
+
+      // 14
+      [3, 145, 115, 1, 146, 116],
+      [4, 64, 40, 5, 65, 41],
+      [11, 36, 16, 5, 37, 17],
+      [11, 36, 12, 5, 37, 13],
+
+      // 15
+      [5, 109, 87, 1, 110, 88],
+      [5, 65, 41, 5, 66, 42],
+      [5, 54, 24, 7, 55, 25],
+      [11, 36, 12, 7, 37, 13],
+
+      // 16
+      [5, 122, 98, 1, 123, 99],
+      [7, 73, 45, 3, 74, 46],
+      [15, 43, 19, 2, 44, 20],
+      [3, 45, 15, 13, 46, 16],
+
+      // 17
+      [1, 135, 107, 5, 136, 108],
+      [10, 74, 46, 1, 75, 47],
+      [1, 50, 22, 15, 51, 23],
+      [2, 42, 14, 17, 43, 15],
+
+      // 18
+      [5, 150, 120, 1, 151, 121],
+      [9, 69, 43, 4, 70, 44],
+      [17, 50, 22, 1, 51, 23],
+      [2, 42, 14, 19, 43, 15],
+
+      // 19
+      [3, 141, 113, 4, 142, 114],
+      [3, 70, 44, 11, 71, 45],
+      [17, 47, 21, 4, 48, 22],
+      [9, 39, 13, 16, 40, 14],
+
+      // 20
+      [3, 135, 107, 5, 136, 108],
+      [3, 67, 41, 13, 68, 42],
+      [15, 54, 24, 5, 55, 25],
+      [15, 43, 15, 10, 44, 16],
+
+      // 21
+      [4, 144, 116, 4, 145, 117],
+      [17, 68, 42],
+      [17, 50, 22, 6, 51, 23],
+      [19, 46, 16, 6, 47, 17],
+
+      // 22
+      [2, 139, 111, 7, 140, 112],
+      [17, 74, 46],
+      [7, 54, 24, 16, 55, 25],
+      [34, 37, 13],
+
+      // 23
+      [4, 151, 121, 5, 152, 122],
+      [4, 75, 47, 14, 76, 48],
+      [11, 54, 24, 14, 55, 25],
+      [16, 45, 15, 14, 46, 16],
+
+      // 24
+      [6, 147, 117, 4, 148, 118],
+      [6, 73, 45, 14, 74, 46],
+      [11, 54, 24, 16, 55, 25],
+      [30, 46, 16, 2, 47, 17],
+
+      // 25
+      [8, 132, 106, 4, 133, 107],
+      [8, 75, 47, 13, 76, 48],
+      [7, 54, 24, 22, 55, 25],
+      [22, 45, 15, 13, 46, 16],
+
+      // 26
+      [10, 142, 114, 2, 143, 115],
+      [19, 74, 46, 4, 75, 47],
+      [28, 50, 22, 6, 51, 23],
+      [33, 46, 16, 4, 47, 17],
+
+      // 27
+      [8, 152, 122, 4, 153, 123],
+      [22, 73, 45, 3, 74, 46],
+      [8, 53, 23, 26, 54, 24],
+      [12, 45, 15, 28, 46, 16],
+
+      // 28
+      [3, 147, 117, 10, 148, 118],
+      [3, 73, 45, 23, 74, 46],
+      [4, 54, 24, 31, 55, 25],
+      [11, 45, 15, 31, 46, 16],
+
+      // 29
+      [7, 146, 116, 7, 147, 117],
+      [21, 73, 45, 7, 74, 46],
+      [1, 53, 23, 37, 54, 24],
+      [19, 45, 15, 26, 46, 16],
+
+      // 30
+      [5, 145, 115, 10, 146, 116],
+      [19, 75, 47, 10, 76, 48],
+      [15, 54, 24, 25, 55, 25],
+      [23, 45, 15, 25, 46, 16],
+
+      // 31
+      [13, 145, 115, 3, 146, 116],
+      [2, 74, 46, 29, 75, 47],
+      [42, 54, 24, 1, 55, 25],
+      [23, 45, 15, 28, 46, 16],
+
+      // 32
+      [17, 145, 115],
+      [10, 74, 46, 23, 75, 47],
+      [10, 54, 24, 35, 55, 25],
+      [19, 45, 15, 35, 46, 16],
+
+      // 33
+      [17, 145, 115, 1, 146, 116],
+      [14, 74, 46, 21, 75, 47],
+      [29, 54, 24, 19, 55, 25],
+      [11, 45, 15, 46, 46, 16],
+
+      // 34
+      [13, 145, 115, 6, 146, 116],
+      [14, 74, 46, 23, 75, 47],
+      [44, 54, 24, 7, 55, 25],
+      [59, 46, 16, 1, 47, 17],
+
+      // 35
+      [12, 151, 121, 7, 152, 122],
+      [12, 75, 47, 26, 76, 48],
+      [39, 54, 24, 14, 55, 25],
+      [22, 45, 15, 41, 46, 16],
+
+      // 36
+      [6, 151, 121, 14, 152, 122],
+      [6, 75, 47, 34, 76, 48],
+      [46, 54, 24, 10, 55, 25],
+      [2, 45, 15, 64, 46, 16],
+
+      // 37
+      [17, 152, 122, 4, 153, 123],
+      [29, 74, 46, 14, 75, 47],
+      [49, 54, 24, 10, 55, 25],
+      [24, 45, 15, 46, 46, 16],
+
+      // 38
+      [4, 152, 122, 18, 153, 123],
+      [13, 74, 46, 32, 75, 47],
+      [48, 54, 24, 14, 55, 25],
+      [42, 45, 15, 32, 46, 16],
+
+      // 39
+      [20, 147, 117, 4, 148, 118],
+      [40, 75, 47, 7, 76, 48],
+      [43, 54, 24, 22, 55, 25],
+      [10, 45, 15, 67, 46, 16],
+
+      // 40
+      [19, 148, 118, 6, 149, 119],
+      [18, 75, 47, 31, 76, 48],
+      [34, 54, 24, 34, 55, 25],
+      [20, 45, 15, 61, 46, 16]
+    ];
+
+    var qrRSBlock = function(totalCount, dataCount) {
+      var _this = {};
+      _this.totalCount = totalCount;
+      _this.dataCount = dataCount;
+      return _this;
+    };
+
+    var _this = {};
+
+    var getRsBlockTable = function(typeNumber, errorCorrectionLevel) {
+
+      switch(errorCorrectionLevel) {
+      case QRErrorCorrectionLevel.L :
+        return RS_BLOCK_TABLE[(typeNumber - 1) * 4 + 0];
+      case QRErrorCorrectionLevel.M :
+        return RS_BLOCK_TABLE[(typeNumber - 1) * 4 + 1];
+      case QRErrorCorrectionLevel.Q :
+        return RS_BLOCK_TABLE[(typeNumber - 1) * 4 + 2];
+      case QRErrorCorrectionLevel.H :
+        return RS_BLOCK_TABLE[(typeNumber - 1) * 4 + 3];
+      default :
+        return undefined;
+      }
+    };
+
+    _this.getRSBlocks = function(typeNumber, errorCorrectionLevel) {
+
+      var rsBlock = getRsBlockTable(typeNumber, errorCorrectionLevel);
+
+      if (typeof rsBlock == 'undefined') {
+        throw 'bad rs block @ typeNumber:' + typeNumber +
+            '/errorCorrectionLevel:' + errorCorrectionLevel;
+      }
+
+      var length = rsBlock.length / 3;
+
+      var list = [];
+
+      for (var i = 0; i < length; i += 1) {
+
+        var count = rsBlock[i * 3 + 0];
+        var totalCount = rsBlock[i * 3 + 1];
+        var dataCount = rsBlock[i * 3 + 2];
+
+        for (var j = 0; j < count; j += 1) {
+          list.push(qrRSBlock(totalCount, dataCount) );
+        }
+      }
+
+      return list;
+    };
+
+    return _this;
+  }();
+
+  //---------------------------------------------------------------------
+  // qrBitBuffer
+  //---------------------------------------------------------------------
+
+  var qrBitBuffer = function() {
+
+    var _buffer = [];
+    var _length = 0;
+
+    var _this = {};
+
+    _this.getBuffer = function() {
+      return _buffer;
+    };
+
+    _this.getAt = function(index) {
+      var bufIndex = Math.floor(index / 8);
+      return ( (_buffer[bufIndex] >>> (7 - index % 8) ) & 1) == 1;
+    };
+
+    _this.put = function(num, length) {
+      for (var i = 0; i < length; i += 1) {
+        _this.putBit( ( (num >>> (length - i - 1) ) & 1) == 1);
+      }
+    };
+
+    _this.getLengthInBits = function() {
+      return _length;
+    };
+
+    _this.putBit = function(bit) {
+
+      var bufIndex = Math.floor(_length / 8);
+      if (_buffer.length <= bufIndex) {
+        _buffer.push(0);
+      }
+
+      if (bit) {
+        _buffer[bufIndex] |= (0x80 >>> (_length % 8) );
+      }
+
+      _length += 1;
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // qrNumber
+  //---------------------------------------------------------------------
+
+  var qrNumber = function(data) {
+
+    var _mode = QRMode.MODE_NUMBER;
+    var _data = data;
+
+    var _this = {};
+
+    _this.getMode = function() {
+      return _mode;
+    };
+
+    _this.getLength = function(buffer) {
+      return _data.length;
+    };
+
+    _this.write = function(buffer) {
+
+      var data = _data;
+
+      var i = 0;
+
+      while (i + 2 < data.length) {
+        buffer.put(strToNum(data.substring(i, i + 3) ), 10);
+        i += 3;
+      }
+
+      if (i < data.length) {
+        if (data.length - i == 1) {
+          buffer.put(strToNum(data.substring(i, i + 1) ), 4);
+        } else if (data.length - i == 2) {
+          buffer.put(strToNum(data.substring(i, i + 2) ), 7);
+        }
+      }
+    };
+
+    var strToNum = function(s) {
+      var num = 0;
+      for (var i = 0; i < s.length; i += 1) {
+        num = num * 10 + chatToNum(s.charAt(i) );
+      }
+      return num;
+    };
+
+    var chatToNum = function(c) {
+      if ('0' <= c && c <= '9') {
+        return c.charCodeAt(0) - '0'.charCodeAt(0);
+      }
+      throw 'illegal char :' + c;
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // qrAlphaNum
+  //---------------------------------------------------------------------
+
+  var qrAlphaNum = function(data) {
+
+    var _mode = QRMode.MODE_ALPHA_NUM;
+    var _data = data;
+
+    var _this = {};
+
+    _this.getMode = function() {
+      return _mode;
+    };
+
+    _this.getLength = function(buffer) {
+      return _data.length;
+    };
+
+    _this.write = function(buffer) {
+
+      var s = _data;
+
+      var i = 0;
+
+      while (i + 1 < s.length) {
+        buffer.put(
+          getCode(s.charAt(i) ) * 45 +
+          getCode(s.charAt(i + 1) ), 11);
+        i += 2;
+      }
+
+      if (i < s.length) {
+        buffer.put(getCode(s.charAt(i) ), 6);
+      }
+    };
+
+    var getCode = function(c) {
+
+      if ('0' <= c && c <= '9') {
+        return c.charCodeAt(0) - '0'.charCodeAt(0);
+      } else if ('A' <= c && c <= 'Z') {
+        return c.charCodeAt(0) - 'A'.charCodeAt(0) + 10;
+      } else {
+        switch (c) {
+        case ' ' : return 36;
+        case '$' : return 37;
+        case '%' : return 38;
+        case '*' : return 39;
+        case '+' : return 40;
+        case '-' : return 41;
+        case '.' : return 42;
+        case '/' : return 43;
+        case ':' : return 44;
+        default :
+          throw 'illegal char :' + c;
+        }
+      }
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // qr8BitByte
+  //---------------------------------------------------------------------
+
+  var qr8BitByte = function(data) {
+
+    var _mode = QRMode.MODE_8BIT_BYTE;
+    var _data = data;
+    var _bytes = qrcode.stringToBytes(data);
+
+    var _this = {};
+
+    _this.getMode = function() {
+      return _mode;
+    };
+
+    _this.getLength = function(buffer) {
+      return _bytes.length;
+    };
+
+    _this.write = function(buffer) {
+      for (var i = 0; i < _bytes.length; i += 1) {
+        buffer.put(_bytes[i], 8);
+      }
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // qrKanji
+  //---------------------------------------------------------------------
+
+  var qrKanji = function(data) {
+
+    var _mode = QRMode.MODE_KANJI;
+    var _data = data;
+
+    var stringToBytes = qrcode.stringToBytesFuncs['SJIS'];
+    if (!stringToBytes) {
+      throw 'sjis not supported.';
+    }
+    !function(c, code) {
+      // self test for sjis support.
+      var test = stringToBytes(c);
+      if (test.length != 2 || ( (test[0] << 8) | test[1]) != code) {
+        throw 'sjis not supported.';
+      }
+    }('\u53cb', 0x9746);
+
+    var _bytes = stringToBytes(data);
+
+    var _this = {};
+
+    _this.getMode = function() {
+      return _mode;
+    };
+
+    _this.getLength = function(buffer) {
+      return ~~(_bytes.length / 2);
+    };
+
+    _this.write = function(buffer) {
+
+      var data = _bytes;
+
+      var i = 0;
+
+      while (i + 1 < data.length) {
+
+        var c = ( (0xff & data[i]) << 8) | (0xff & data[i + 1]);
+
+        if (0x8140 <= c && c <= 0x9FFC) {
+          c -= 0x8140;
+        } else if (0xE040 <= c && c <= 0xEBBF) {
+          c -= 0xC140;
+        } else {
+          throw 'illegal char at ' + (i + 1) + '/' + c;
+        }
+
+        c = ( (c >>> 8) & 0xff) * 0xC0 + (c & 0xff);
+
+        buffer.put(c, 13);
+
+        i += 2;
+      }
+
+      if (i < data.length) {
+        throw 'illegal char at ' + (i + 1);
+      }
+    };
+
+    return _this;
+  };
+
+  //=====================================================================
+  // GIF Support etc.
+  //
+
+  //---------------------------------------------------------------------
+  // byteArrayOutputStream
+  //---------------------------------------------------------------------
+
+  var byteArrayOutputStream = function() {
+
+    var _bytes = [];
+
+    var _this = {};
+
+    _this.writeByte = function(b) {
+      _bytes.push(b & 0xff);
+    };
+
+    _this.writeShort = function(i) {
+      _this.writeByte(i);
+      _this.writeByte(i >>> 8);
+    };
+
+    _this.writeBytes = function(b, off, len) {
+      off = off || 0;
+      len = len || b.length;
+      for (var i = 0; i < len; i += 1) {
+        _this.writeByte(b[i + off]);
+      }
+    };
+
+    _this.writeString = function(s) {
+      for (var i = 0; i < s.length; i += 1) {
+        _this.writeByte(s.charCodeAt(i) );
+      }
+    };
+
+    _this.toByteArray = function() {
+      return _bytes;
+    };
+
+    _this.toString = function() {
+      var s = '';
+      s += '[';
+      for (var i = 0; i < _bytes.length; i += 1) {
+        if (i > 0) {
+          s += ',';
+        }
+        s += _bytes[i];
+      }
+      s += ']';
+      return s;
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // base64EncodeOutputStream
+  //---------------------------------------------------------------------
+
+  var base64EncodeOutputStream = function() {
+
+    var _buffer = 0;
+    var _buflen = 0;
+    var _length = 0;
+    var _base64 = '';
+
+    var _this = {};
+
+    var writeEncoded = function(b) {
+      _base64 += String.fromCharCode(encode(b & 0x3f) );
+    };
+
+    var encode = function(n) {
+      if (n < 0) {
+        // error.
+      } else if (n < 26) {
+        return 0x41 + n;
+      } else if (n < 52) {
+        return 0x61 + (n - 26);
+      } else if (n < 62) {
+        return 0x30 + (n - 52);
+      } else if (n == 62) {
+        return 0x2b;
+      } else if (n == 63) {
+        return 0x2f;
+      }
+      throw 'n:' + n;
+    };
+
+    _this.writeByte = function(n) {
+
+      _buffer = (_buffer << 8) | (n & 0xff);
+      _buflen += 8;
+      _length += 1;
+
+      while (_buflen >= 6) {
+        writeEncoded(_buffer >>> (_buflen - 6) );
+        _buflen -= 6;
+      }
+    };
+
+    _this.flush = function() {
+
+      if (_buflen > 0) {
+        writeEncoded(_buffer << (6 - _buflen) );
+        _buffer = 0;
+        _buflen = 0;
+      }
+
+      if (_length % 3 != 0) {
+        // padding
+        var padlen = 3 - _length % 3;
+        for (var i = 0; i < padlen; i += 1) {
+          _base64 += '=';
+        }
+      }
+    };
+
+    _this.toString = function() {
+      return _base64;
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // base64DecodeInputStream
+  //---------------------------------------------------------------------
+
+  var base64DecodeInputStream = function(str) {
+
+    var _str = str;
+    var _pos = 0;
+    var _buffer = 0;
+    var _buflen = 0;
+
+    var _this = {};
+
+    _this.read = function() {
+
+      while (_buflen < 8) {
+
+        if (_pos >= _str.length) {
+          if (_buflen == 0) {
+            return -1;
+          }
+          throw 'unexpected end of file./' + _buflen;
+        }
+
+        var c = _str.charAt(_pos);
+        _pos += 1;
+
+        if (c == '=') {
+          _buflen = 0;
+          return -1;
+        } else if (c.match(/^\s$/) ) {
+          // ignore if whitespace.
+          continue;
+        }
+
+        _buffer = (_buffer << 6) | decode(c.charCodeAt(0) );
+        _buflen += 6;
+      }
+
+      var n = (_buffer >>> (_buflen - 8) ) & 0xff;
+      _buflen -= 8;
+      return n;
+    };
+
+    var decode = function(c) {
+      if (0x41 <= c && c <= 0x5a) {
+        return c - 0x41;
+      } else if (0x61 <= c && c <= 0x7a) {
+        return c - 0x61 + 26;
+      } else if (0x30 <= c && c <= 0x39) {
+        return c - 0x30 + 52;
+      } else if (c == 0x2b) {
+        return 62;
+      } else if (c == 0x2f) {
+        return 63;
+      } else {
+        throw 'c:' + c;
+      }
+    };
+
+    return _this;
+  };
+
+  //---------------------------------------------------------------------
+  // gifImage (B/W)
+  //---------------------------------------------------------------------
+
+  var gifImage = function(width, height) {
+
+    var _width = width;
+    var _height = height;
+    var _data = new Array(width * height);
+
+    var _this = {};
+
+    _this.setPixel = function(x, y, pixel) {
+      _data[y * _width + x] = pixel;
+    };
+
+    _this.write = function(out) {
+
+      //---------------------------------
+      // GIF Signature
+
+      out.writeString('GIF87a');
+
+      //---------------------------------
+      // Screen Descriptor
+
+      out.writeShort(_width);
+      out.writeShort(_height);
+
+      out.writeByte(0x80); // 2bit
+      out.writeByte(0);
+      out.writeByte(0);
+
+      //---------------------------------
+      // Global Color Map
+
+      // black
+      out.writeByte(0x00);
+      out.writeByte(0x00);
+      out.writeByte(0x00);
+
+      // white
+      out.writeByte(0xff);
+      out.writeByte(0xff);
+      out.writeByte(0xff);
+
+      //---------------------------------
+      // Image Descriptor
+
+      out.writeString(',');
+      out.writeShort(0);
+      out.writeShort(0);
+      out.writeShort(_width);
+      out.writeShort(_height);
+      out.writeByte(0);
+
+      //---------------------------------
+      // Local Color Map
+
+      //---------------------------------
+      // Raster Data
+
+      var lzwMinCodeSize = 2;
+      var raster = getLZWRaster(lzwMinCodeSize);
+
+      out.writeByte(lzwMinCodeSize);
+
+      var offset = 0;
+
+      while (raster.length - offset > 255) {
+        out.writeByte(255);
+        out.writeBytes(raster, offset, 255);
+        offset += 255;
+      }
+
+      out.writeByte(raster.length - offset);
+      out.writeBytes(raster, offset, raster.length - offset);
+      out.writeByte(0x00);
+
+      //---------------------------------
+      // GIF Terminator
+      out.writeString(';');
+    };
+
+    var bitOutputStream = function(out) {
+
+      var _out = out;
+      var _bitLength = 0;
+      var _bitBuffer = 0;
+
+      var _this = {};
+
+      _this.write = function(data, length) {
+
+        if ( (data >>> length) != 0) {
+          throw 'length over';
+        }
+
+        while (_bitLength + length >= 8) {
+          _out.writeByte(0xff & ( (data << _bitLength) | _bitBuffer) );
+          length -= (8 - _bitLength);
+          data >>>= (8 - _bitLength);
+          _bitBuffer = 0;
+          _bitLength = 0;
+        }
+
+        _bitBuffer = (data << _bitLength) | _bitBuffer;
+        _bitLength = _bitLength + length;
+      };
+
+      _this.flush = function() {
+        if (_bitLength > 0) {
+          _out.writeByte(_bitBuffer);
+        }
+      };
+
+      return _this;
+    };
+
+    var getLZWRaster = function(lzwMinCodeSize) {
+
+      var clearCode = 1 << lzwMinCodeSize;
+      var endCode = (1 << lzwMinCodeSize) + 1;
+      var bitLength = lzwMinCodeSize + 1;
+
+      // Setup LZWTable
+      var table = lzwTable();
+
+      for (var i = 0; i < clearCode; i += 1) {
+        table.add(String.fromCharCode(i) );
+      }
+      table.add(String.fromCharCode(clearCode) );
+      table.add(String.fromCharCode(endCode) );
+
+      var byteOut = byteArrayOutputStream();
+      var bitOut = bitOutputStream(byteOut);
+
+      // clear code
+      bitOut.write(clearCode, bitLength);
+
+      var dataIndex = 0;
+
+      var s = String.fromCharCode(_data[dataIndex]);
+      dataIndex += 1;
+
+      while (dataIndex < _data.length) {
+
+        var c = String.fromCharCode(_data[dataIndex]);
+        dataIndex += 1;
+
+        if (table.contains(s + c) ) {
+
+          s = s + c;
+
+        } else {
+
+          bitOut.write(table.indexOf(s), bitLength);
+
+          if (table.size() < 0xfff) {
+
+            if (table.size() == (1 << bitLength) ) {
+              bitLength += 1;
+            }
+
+            table.add(s + c);
+          }
+
+          s = c;
+        }
+      }
+
+      bitOut.write(table.indexOf(s), bitLength);
+
+      // end code
+      bitOut.write(endCode, bitLength);
+
+      bitOut.flush();
+
+      return byteOut.toByteArray();
+    };
+
+    var lzwTable = function() {
+
+      var _map = {};
+      var _size = 0;
+
+      var _this = {};
+
+      _this.add = function(key) {
+        if (_this.contains(key) ) {
+          throw 'dup key:' + key;
+        }
+        _map[key] = _size;
+        _size += 1;
+      };
+
+      _this.size = function() {
+        return _size;
+      };
+
+      _this.indexOf = function(key) {
+        return _map[key];
+      };
+
+      _this.contains = function(key) {
+        return typeof _map[key] != 'undefined';
+      };
+
+      return _this;
+    };
+
+    return _this;
+  };
+
+  var createDataURL = function(width, height, getPixel) {
+    var gif = gifImage(width, height);
+    for (var y = 0; y < height; y += 1) {
+      for (var x = 0; x < width; x += 1) {
+        gif.setPixel(x, y, getPixel(x, y) );
+      }
+    }
+
+    var b = byteArrayOutputStream();
+    gif.write(b);
+
+    var base64 = base64EncodeOutputStream();
+    var bytes = b.toByteArray();
+    for (var i = 0; i < bytes.length; i += 1) {
+      base64.writeByte(bytes[i]);
+    }
+    base64.flush();
+
+    return 'data:image/gif;base64,' + base64;
+  };
+
+  //---------------------------------------------------------------------
+  // returns qrcode function.
+
+  return qrcode;
+}();
+
+// multibyte support
+!function() {
+
+  qrcode.stringToBytesFuncs['UTF-8'] = function(s) {
+    // http://stackoverflow.com/questions/18729405/how-to-convert-utf8-string-to-byte-array
+    function toUTF8Array(str) {
+      var utf8 = [];
+      for (var i=0; i < str.length; i++) {
+        var charcode = str.charCodeAt(i);
+        if (charcode < 0x80) utf8.push(charcode);
+        else if (charcode < 0x800) {
+          utf8.push(0xc0 | (charcode >> 6),
+              0x80 | (charcode & 0x3f));
+        }
+        else if (charcode < 0xd800 || charcode >= 0xe000) {
+          utf8.push(0xe0 | (charcode >> 12),
+              0x80 | ((charcode>>6) & 0x3f),
+              0x80 | (charcode & 0x3f));
+        }
+        // surrogate pair
+        else {
+          i++;
+          // UTF-16 encodes 0x10000-0x10FFFF by
+          // subtracting 0x10000 and splitting the
+          // 20 bits of 0x0-0xFFFFF into two halves
+          charcode = 0x10000 + (((charcode & 0x3ff)<<10)
+            | (str.charCodeAt(i) & 0x3ff));
+          utf8.push(0xf0 | (charcode >>18),
+              0x80 | ((charcode>>12) & 0x3f),
+              0x80 | ((charcode>>6) & 0x3f),
+              0x80 | (charcode & 0x3f));
+        }
+      }
+      return utf8;
+    }
+    return toUTF8Array(s);
+  };
+
+}();
+
+(function (factory) {
+  if (typeof define === 'function' && define.amd) {
+      define([], factory);
+  } else if (typeof exports === 'object') {
+      module.exports = factory();
+  }
+}(function () {
+    return qrcode;
+}));
+
+</script>
+<script>
+'use strict';
+const PC=PlannerCore;
+function escapeHTML(value){return String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+const uid=()=>crypto.randomUUID();
+const rawLocal=localStorage.getItem('plannerV2');
+if(rawLocal&&!localStorage.getItem('plannerBeforeRepair'))localStorage.setItem('plannerBeforeRepair',rawLocal);
+JSONBIN_KEY=''; // Legacy browser-to-JSONBin writes are disabled, credentials remain untouched for recovery.
+function readSetting(key,fallback=null){try{return JSON.parse(localStorage.getItem(key)||'null')??fallback;}catch{return fallback;}}
+let syncConfig=readSetting('plannerConnection');
+const defaultServer='https://nastya-planner-sync.midnightst.workers.dev';
+const connectToken=new URLSearchParams(location.hash.slice(1)).get('connect');
+if(connectToken&&/^[A-Za-z0-9_-]{43}$/.test(connectToken)){
+ const next={url:defaultServer,token:connectToken};
+ if(!PC.same(syncConfig,next)){localStorage.removeItem('plannerSyncBase');}
+ syncConfig=next;localStorage.setItem('plannerConnection',JSON.stringify(next));
+ history.replaceState(null,'',location.pathname+location.search);
+}
+let baseState=readSetting('plannerSyncBase');
+let revision=baseState?.revision??null;
+let syncing=false,blocked=false,ready=false;
+let retryMs=2000;
+function content(d){
+ const x=PC.clone(d);delete x._savedAt;delete x._plannerSync;
+ for(const [dk,events]of Object.entries(x.calEvents||{})){
+  if(dk<TK)continue;
+  x.calEvents[dk]=events.filter(e=>!e._repairRecur&&!(e.fromSched&&e.schedId)&&!(e.fromDayTask&&e.taskId));
+  if(!x.calEvents[dk].length)delete x.calEvents[dk];
+ }
+ return x;
+}
+function stash(label,data=D){
+ const entry={label,date:new Date().toISOString(),data:PC.clone(data)};
+ const list=readSetting('plannerRecovery',[]);list.push(entry);
+ // Keep a bounded history, plus the immutable pre-repair snapshot.
+ localStorage.setItem('plannerRecovery',JSON.stringify(list.slice(-12)));
+ return entry;
+}
+function localSave(){try{localStorage.setItem('plannerV2',JSON.stringify(D));return true;}catch(e){blocked=true;showSv('error','Не удалось сохранить на устройстве — скачай копию');return false;}}
+function downloadJSON(data,name){const a=document.createElement('a');const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+function exportPlanner(){downloadJSON({format:'planner-backup-v2',exportedAt:new Date().toISOString(),current:D,recovery:readSetting('plannerRecovery',[]),beforeRepair:JSON.parse(localStorage.getItem('plannerBeforeRepair')||'null')},`planner-${TK}.json`);}
+async function importPlanner(file){try{
+ const value=JSON.parse(await file.text());const incoming=PC.validate(value.current||value.data||value);
+ stash('Перед восстановлением');D=PC.clone(incoming);migrateData();blocked=false;refreshUIFromData();sv();
+ }catch(e){alert('Не удалось восстановить: '+e.message);}}
+function migrateData(){
+ PC.validate(D);D.schedules ||= [];D.healthData ||= {};D.archive ||= {};D.qcoach ||= {};D.resRef ||= {};
+ D.scheduleOverrides ||= {};D.recurringOverrides ||= {};
+ for(const [dk,day]of Object.entries(D.days))for(const key of ['tasks','recur'])for(const [i,t]of (day[key]||[]).entries()){
+  t.id ||= `legacy-${key}-${dk}-${i}`;
+  if(t.fromSched&&!t.schedId){const matches=D.schedules.filter(s=>s.name===t.text);if(matches.length===1){t.schedId=matches[0].id;t.occurrenceDate=dk;}}
+ }
+ for(const [i,s]of D.schedules.entries()){s.id??=`legacy-schedule-${i}`;s.startDate ||= TK;}
+ // Daily recurring template persists across days, while completion belongs to its date.
+ if(!D.recurringTemplate){const keys=Object.keys(D.days).filter(k=>k<=TK&&D.days[k].recur?.length).sort();const source=keys.at(-1);D.recurringTemplate=source?D.days[source].recur.map(t=>({...t,done:false})):[];}
+ if(!D.days[TK])D.days[TK]={};
+ if(!D.days[TK].recur?.length&&D.recurringTemplate.length)D.days[TK].recur=D.recurringTemplate.map(t=>({...t,done:false}));
+ // Associate legacy calendar copies only when the source is unambiguous; keep edits we cannot prove generated.
+ for(const [dk,events]of Object.entries(D.calEvents))for(const [i,ev]of events.entries()){
+  ev.id ||= `legacy-event-${dk}-${i}`;
+  if(ev.fromDayTask&&!ev.taskId){const ts=(D.days[dk]?.tasks||[]).filter(t=>t.text===ev.text);if(ts.length===1)ev.taskId=ts[0].id;}
+  if(ev.fromSched&&!ev.schedId){const ss=D.schedules.filter(s=>s.name===ev.text);if(ss.length===1){ev.schedId=ss[0].id;if(ev.done||ev.time)D.scheduleOverrides[`${ev.schedId}:${dk}`]||={done:ev.done||false,time:ev.time||''};}}
+ }
+}
+shouldRunOnDate=(s,date)=>PC.due(s,date,TK);
+shouldRunToday=s=>shouldRunOnDate(s,today);
+function calendarTask(dk,task){return {text:task.text,done:task.done||false,pri:task.pri||0,time:task.time||'',id:`task:${task.id}`,taskId:task.id,fromDayTask:true};}
+function reconcileCalendar(){
+ D.calEvents ||= {};
+ for(const [dk,events]of Object.entries(D.calEvents)){
+  // Historical records are never rebuilt or cleared.
+  if(dk<TK)continue;
+  D.calEvents[dk]=events.filter(e=>!(e.taskId&&e.fromDayTask)&&!(e.schedId&&e.fromSched)&&!e._repairRecur);
+ }
+ for(const [dk,day]of Object.entries(D.days)){
+  if(dk<TK)continue;
+  for(const [i,t]of (day.tasks||[]).entries()){
+   t.id ||= `task-${dk}-${uid()}`;if(!t.text)continue;
+   D.calEvents[dk] ||= [];D.calEvents[dk].push(calendarTask(dk,t));
+  }
+ }
+ const cursor=typeof calCursor!=='undefined'?calCursor:today;
+ const horizon=Math.max(60,Math.min(730,Math.ceil((cursor-today)/86400000)+65));
+ const recur=D.days[TK]?.recur||[];
+ for(let n=0;n<=horizon;n++){
+  const date=addD(today,n),dk=fk(date);D.calEvents[dk] ||= [];
+  for(const s of D.schedules){
+   if(!s.name||!shouldRunOnDate(s,date))continue;
+   const override=D.scheduleOverrides[`${s.id}:${dk}`]||{};if(override.skip)continue;
+   if((D.days[dk]?.tasks||[]).some(t=>String(t.schedId)===String(s.id)))continue;
+   D.calEvents[dk].push({text:s.name,done:false,pri:s.pri||0,time:'',...override,id:`sched:${s.id}:${dk}`,schedId:s.id,fromSched:true});
+  }
+  for(const r of recur){
+   if(!r.text)continue;r.id ||= uid();
+   // Replace only matching legacy daily previews; preserve unrelated entries.
+   D.calEvents[dk]=D.calEvents[dk].filter(e=>!(e.fromRecur&&e.text===r.text));
+   const actual=D.days[dk]?.recur?.find(t=>t.id===r.id);const override=D.recurringOverrides[`${r.id}:${dk}`]||{};if(override.skip)continue;
+   D.calEvents[dk].push({...r,done:actual?.done||false,...override,id:`recur:${r.id}:${dk}`,recurId:r.id,fromRecur:true,_repairRecur:true});
+  }
+  if(!D.calEvents[dk].length)delete D.calEvents[dk];
+ }
+}
+syncDayTasksToCalendar=reconcileCalendar;syncRecurringToCalendar=reconcileCalendar;syncSchedulesToCalendar=reconcileCalendar;syncToCalendar=reconcileCalendar;
+runSchedules=function(){
+ const tasks=getDayTasks();
+ for(const s of D.schedules){
+  if(!shouldRunToday(s)||D.scheduleOverrides[`${s.id}:${TK}`]?.skip)continue;
+  if(s.lastAdded===TK&&!tasks.some(t=>String(t.schedId)===String(s.id)&&t.occurrenceDate===TK))continue;
+  if(!tasks.some(t=>String(t.schedId)===String(s.id)&&t.occurrenceDate===TK))tasks.push({id:`occurrence:${s.id}:${TK}`,text:s.name,done:false,pri:s.pri||0,time:'',fromSched:true,schedId:s.id,occurrenceDate:TK,...D.scheduleOverrides[`${s.id}:${TK}`]});
+ }
+ reconcileCalendar();
+};
+function updateCalendarSource(dk,ev){
+ if(ev.taskId){const t=D.days[dk]?.tasks?.find(t=>t.id===ev.taskId);if(t)Object.assign(t,{text:ev.text,time:ev.time||'',done:ev.done,pri:ev.pri||0});}
+ if(ev.schedId)D.scheduleOverrides[`${ev.schedId}:${dk}`]={text:ev.text,time:ev.time||'',done:ev.done,pri:ev.pri||0};
+ if(ev.recurId){D.recurringOverrides[`${ev.recurId}:${dk}`]={text:ev.text,time:ev.time||'',done:ev.done,pri:ev.pri||0};const t=D.days[dk]?.recur?.find(t=>t.id===ev.recurId);if(t)Object.assign(t,{done:ev.done});}
+}
+function deleteCalendarSource(dk,ev){
+ if(ev.taskId&&D.days[dk]?.tasks)D.days[dk].tasks=D.days[dk].tasks.filter(t=>t.id!==ev.taskId);
+ if(ev.schedId)D.scheduleOverrides[`${ev.schedId}:${dk}`]={skip:true};
+ if(ev.recurId){D.recurringOverrides[`${ev.recurId}:${dk}`]={skip:true};D.days[dk] ||= {};D.days[dk].recur ||= D.recurringTemplate.map(t=>({...t,done:false}));D.days[dk].recur=D.days[dk].recur.filter(t=>t.id!==ev.recurId);}
+}
+function moveCalendarSource(from,to,ev){
+ if(ev.taskId){const ts=D.days[from]?.tasks||[],i=ts.findIndex(t=>t.id===ev.taskId);if(i>=0){D.days[to] ||= {};D.days[to].tasks ||= [];D.days[to].tasks.push(ts.splice(i,1)[0]);}}
+ if(ev.schedId){D.scheduleOverrides[`${ev.schedId}:${from}`]={skip:true};ev.fromSched=false;delete ev.schedId;ev.id=uid();}
+ if(ev.recurId){D.recurringOverrides[`${ev.recurId}:${from}`]={skip:true};ev.fromRecur=false;delete ev.recurId;delete ev._repairRecur;ev.id=uid();}
+}
+function renderOverdue(){
+ let box=document.getElementById('overdueTasks');if(!box){box=document.createElement('details');box.id='overdueTasks';document.getElementById('dayTasks').after(box);}
+ const rows=[];for(const [dk,day]of Object.entries(D.days))if(dk<TK)for(const task of day.tasks||[])if(task.text&&!task.done)rows.push({dk,task});
+ box.replaceChildren();const summary=document.createElement('summary');summary.textContent=`Незавершённые с прошлых дат: ${rows.length}`;box.append(summary);
+ for(const {dk,task}of rows.sort((a,b)=>b.dk.localeCompare(a.dk))){const row=document.createElement('div');row.style.cssText='padding:8px 0;border-bottom:1px solid #ddd';const text=document.createElement('span');text.textContent=dk+' · '+task.text+' ';const move=document.createElement('button');move.textContent='На сегодня';move.onclick=()=>{D.days[dk].tasks=D.days[dk].tasks.filter(t=>t.id!==task.id);if(task.schedId){D.scheduleOverrides[`${task.schedId}:${dk}`]={skip:true};task.originalSchedId=task.schedId;delete task.schedId;delete task.fromSched;}getDayTasks().push(task);sv();refreshUIFromData();};row.append(text,move);box.append(row);}
+}
+
+const originalRenderCal=renderCal;
+renderCal=function(){reconcileCalendar();originalRenderCal();};
+function refreshUIFromData(){
+ const day=D.days[TK]||{};
+ for(const id of ['q1','q2','q3','e1','e2','e3','e4','win1','win2','win3','sMood','sEnergy','sSleep']){const el=document.getElementById(id);if(el)el.value=day[id]??(id.startsWith('s')?'5':'');}
+ document.getElementById('weekGoal').value=D.weekGoal||'';
+ for(const id of ['cq1','cq2','cq3','cq4']){const el=document.getElementById(id);if(el)el.value=D.qcoach?.[id]||'';}
+ for(const id of ['rm1','rm2','rm3','rm4','rm5']){const el=document.getElementById(id);if(el)el.value=D.resRef?.[`${resM.y}-${resM.m}`]?.[id]||'';}
+ renderRecur();renderDayTasks();renderOverdue();renderTodayHabits();renderGoals();renderCal();renderHabGrid();renderHealthGrid();renderHabNames();renderRes();renderArc();ustate();updProg();
+}
+const originalSave=sv;
+sv=function(){
+ if(!ready)return;
+ originalSave();
+ D.recurringTemplate=(D.days[TK]?.recur||[]).map(t=>({...t,done:false}));
+ reconcileCalendar();localSave();
+ showSv('local',syncConfig?'Сохранено на устройстве · ожидает отправки':'Сохранено на устройстве');
+};
+async function api(method='GET',body){
+ const r=await fetch(syncConfig.url+'/api/state',{method,headers:{'Authorization':'Bearer '+syncConfig.token,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(20000),cache:'no-store'});
+ const j=await r.json();if(!r.ok){const e=new Error(j.error||`Ошибка ${r.status}`);e.status=r.status;e.result=j;throw e;}if(!j.empty)PC.validate(j.data);return j;
+}
+function rememberBase(state){baseState={revision:state.revision,data:content(state.data)};revision=state.revision;localStorage.setItem('plannerSyncBase',JSON.stringify(baseState));}
+function showConflict(remote,paths){
+ blocked=true;stash('Локальная версия при конфликте');stash('Версия другого устройства',remote.data);
+ const panel=document.getElementById('conflictPanel');panel.hidden=false;panel.querySelector('p').textContent='Изменения пересеклись: '+paths.join(', ')+'. Обе версии сохранены. Выбери, какую использовать; копии доступны в экспорте.';
+ panel.remote=remote;showSv('error','Нужно разобрать изменения · обе версии сохранены');
+}
+async function resolveConflict(useRemote){const panel=document.getElementById('conflictPanel');const remote=panel.remote;if(!remote)return;stash('Перед выбором версии');if(useRemote)D=PC.clone(remote.data);rememberBase(remote);migrateData();blocked=false;panel.hidden=true;refreshUIFromData();localSave();await syncNow();}
+async function syncNow(){
+ if(!ready||!syncConfig||syncing||blocked)return;
+ if(!navigator.onLine){showSv('local','Нет сети · сохранено на устройстве');return;}
+ syncing=true;
+ try{
+  const remote=await api();
+  if(remote.empty){showSv('error','Облачное хранилище ещё не заполнено. Скачай локальную копию перед переносом.');return;}
+  if(!baseState && rawLocal){try{if(PC.same(content(JSON.parse(rawLocal)),content(remote.data)))rememberBase(remote);}catch{}}
+  if(!baseState && !rawLocal){D=PC.clone(remote.data);rememberBase(remote);migrateData();refreshUIFromData();localSave();}
+  if(!baseState){showConflict(remote,['Первое подключение: сравниваем данные устройства и облака']);return;}
+  const merged=PC.merge(baseState.data,content(D),content(remote.data));
+  if(merged.conflicts.length){showConflict(remote,merged.conflicts);return;}
+  if(document.activeElement?.matches('input,textarea,select')&&!PC.same(content(D),merged.value))return;
+  if(!PC.same(content(D),merged.value)){stash('Перед объединением');D=merged.value;migrateData();refreshUIFromData();localSave();}
+  rememberBase(remote);
+  const sent=content(D);
+  if(!PC.same(sent,baseState.data)){
+   const response=await api('PUT',{revision:remote.revision,data:sent,requestId:uid()});
+   // Do not replace D here: the user may have edited it while PUT was in flight.
+   rememberBase(response);
+  }
+  retryMs=2000;showSv('synced',PC.same(content(D),baseState.data)?'Синхронизировано ✓':'Новые изменения ожидают отправки');
+ }catch(e){
+  if(e.status===409&&e.result?.data){setTimeout(syncNow,300);}
+  else if(e.status===409){blocked=true;showSv('error',e.message);document.getElementById('connectionStatus').textContent=e.message;}
+  else{showSv('error',e.message+' · локальная копия сохранена');setTimeout(syncNow,retryMs);retryMs=Math.min(retryMs*2,60000);}
+ }finally{syncing=false;}
+}
+pushCloud=syncNow;checkCloudSync=syncNow;pullCloud=async()=>null;
+flushSave=function(){if(!ready)return;localSave();clearTimeout(syncTimer);syncTimer=null;syncNow();};
+openSettings=function(){document.getElementById('connectionPanel').hidden=false;document.getElementById('serverURL').value=syncConfig?.url||defaultServer;document.getElementById('serverToken').value=syncConfig?.token||'';};
+saveKey=async function(){}; // Legacy settings are never used for writes.
+async function connectServer(){
+ const url=document.getElementById('serverURL').value.trim().replace(/\/$/,''),token=document.getElementById('serverToken').value.trim();
+ try{const u=new URL(url);if(u.protocol!=='https:'||u.username||u.password||u.pathname!=='/'||u.search||u.hash)throw Error();}catch{alert('Нужен HTTPS-адрес сервера без пути');return;}
+ if(!token){alert('Введи код подключения');return;}
+ if(syncConfig?.url!==url||syncConfig?.token!==token){baseState=null;revision=null;localStorage.removeItem('plannerSyncBase');}
+ syncConfig={url,token};localStorage.setItem('plannerConnection',JSON.stringify(syncConfig));blocked=false;await syncNow();
+}
+function showPhoneConnection(){
+ if(!syncConfig){openSettings();return;}
+ const link='https://midnightst-code.github.io/planer/#connect='+encodeURIComponent(syncConfig.token);
+ const qr=qrcode(0,'M');qr.addData(link);qr.make();
+ const panel=document.getElementById('phoneConnection');panel.hidden=false;
+ panel.innerHTML='<p>Открой камеру телефона и отсканируй. QR-код даёт доступ к твоему планеру — не пересылай его другим.</p>'+qr.createSvgTag({cellSize:5,margin:4,scalable:true})+'<p>После подключения сохрани обычную ссылку на планер. Если на телефоне есть своя версия задач, сначала скачай её копию.</p><button onclick="document.getElementById(\'phoneConnection\').hidden=true">Скрыть QR-код</button>';
+ panel.querySelector('svg').style.cssText='width:min(100%,300px);height:auto;background:white';panel.scrollIntoView({block:'start'});
+}
+function installTools(){
+ const box=document.createElement('section');box.id='repairTools';box.innerHTML=`
+ <div style="display:flex;gap:8px;flex-wrap:wrap"><button onclick="document.getElementById('tasksCard').scrollIntoView({block:'start'})">К задачам сегодня</button><button onclick="setCalView('week');document.getElementById('calTitle').scrollIntoView({block:'start'})">Календарь недели</button><button onclick="exportPlanner()">Скачать копию всех данных</button><label><input type="file" accept=".json" id="restoreFile">Восстановить копию</label><button onclick="openSettings()">Подключение устройств</button><button onclick="showPhoneConnection()">Подключить телефон</button><button onclick="syncNow()">Обновить</button></div>
+ <div id="phoneConnection" hidden></div><div id="connectionPanel" hidden><p>Подключи один и тот же сервер на компьютере и телефоне. Старые ключи JSONBin здесь не используются.</p><label>Адрес сервера <input id="serverURL" type="url" placeholder="https://…workers.dev"></label><label>Код подключения <input id="serverToken" type="password" autocomplete="off"></label><button onclick="connectServer()">Подключить</button><p id="connectionStatus">До подключения данные сохраняются только на этом устройстве.</p></div>
+ <div id="conflictPanel" hidden><p></p><button onclick="resolveConflict(true)">Использовать версию облака</button><button onclick="resolveConflict(false)">Использовать версию этого устройства</button><button onclick="exportPlanner()">Сначала скачать обе версии</button></div>
+ <p style="font-size:12px">Назначенные задачи остаются на своих датах. Перенос — вручную. Ежемесячные задачи 29–31-го пропускают месяцы без такого числа. Напоминания работают при открытой странице.</p>`;
+ document.body.prepend(box);document.getElementById('restoreFile').onchange=e=>{if(e.target.files[0])importPlanner(e.target.files[0]);};
+}
+function rolloverDate(){
+ const now=new Date();now.setHours(0,0,0,0);const key=fk(now);if(key===TK)return;
+ sv();today.setTime(now.getTime());TK=key;wkStart=getMon(today);migrateData();runSchedules();refreshUIFromData();document.getElementById('topDate').textContent=`${DOWF[today.getDay()]}, ${today.getDate()} ${MRGEN[today.getMonth()]} ${today.getFullYear()}`;localSave();syncNow();
+}
+async function bootRepair(){
+ installTools();
+ try{if(rawLocal)PC.validate(JSON.parse(rawLocal));migrateData();}catch(e){blocked=true;alert('Данные не удалось прочитать. Не очищай браузер; скачай копию. '+e.message);return;}
+ ready=true;runSchedules();autoArchivePastDays();refreshUIFromData();localSave();
+ document.getElementById('topDate').textContent=`${DOWF[today.getDay()]}, ${today.getDate()} ${MRGEN[today.getMonth()]} ${today.getFullYear()}`;
+ showSv('local',syncConfig?'Сохранено на устройстве · проверяю облако':'Сохранено на устройстве · облако не подключено');
+ await syncNow();
+}
+window.addEventListener('online',()=>syncNow());
+window.addEventListener('focus',rolloverDate);
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')rolloverDate();});
+setInterval(()=>{rolloverDate();if(document.visibilityState==='visible')syncNow();},30000);
+if(navigator.locks){
+ navigator.locks.request('planner-writer',{ifAvailable:true},async lock=>{
+  if(!lock){document.body.innerHTML='<main style="padding:40px;font:18px system-ui"><h1>Планер уже открыт в другой вкладке</h1><p>Продолжай работу там или закрой её и обнови эту страницу. Это защищает несохранённые изменения.</p><button onclick="location.reload()">Открыть снова</button></main>';return;}
+  await bootRepair();await new Promise(resolve=>window.addEventListener('pagehide',resolve,{once:true}));
+ });
+}else{bootRepair();}
+
 </script>
 </body>
 </html>
