@@ -4638,12 +4638,13 @@ function migrateData(){
  }
  for(const [i,s]of D.schedules.entries()){s.id??=`legacy-schedule-${i}`;s.startDate ||= TK;}
  // Daily recurring template persists across days, while completion belongs to its date.
- if(!D.recurringTemplate){const keys=Object.keys(D.days).filter(k=>k<=TK&&D.days[k].recur?.length).sort();const source=keys.at(-1);D.recurringTemplate=source?D.days[source].recur.map(t=>({...t,done:false})):[];}
+ if(!D.recurringTemplate){const keys=Object.keys(D.days).filter(k=>k<=TK&&Array.isArray(D.days[k].recur)).sort();const source=keys.at(-1);D.recurringTemplate=source?D.days[source].recur.map(t=>({...t,done:false})):[];}
  if(!D.days[TK])D.days[TK]={};
  if(!D.days[TK].recur?.length&&D.recurringTemplate.length)D.days[TK].recur=D.recurringTemplate.map(t=>({...t,done:false}));
  // Associate legacy calendar copies only when the source is unambiguous; keep edits we cannot prove generated.
  for(const [dk,events]of Object.entries(D.calEvents))for(const [i,ev]of events.entries()){
   ev.id ||= `legacy-event-${dk}-${i}`;
+  if(ev.fromRecur&&!ev.recurId){const rs=D.recurringTemplate.filter(r=>r.text===ev.text);if(rs.length===1){ev.recurId=rs[0].id;ev._repairRecur=true;}}
   if(ev.fromDayTask&&!ev.taskId){const ts=(D.days[dk]?.tasks||[]).filter(t=>t.text===ev.text);if(ts.length===1)ev.taskId=ts[0].id;}
   if(ev.fromSched&&!ev.schedId){const ss=D.schedules.filter(s=>s.name===ev.text);if(ss.length===1){ev.schedId=ss[0].id;if(ev.done||ev.time)D.scheduleOverrides[`${ev.schedId}:${dk}`]||={done:ev.done||false,time:ev.time||''};}}
  }
@@ -4653,6 +4654,7 @@ shouldRunToday=s=>shouldRunOnDate(s,today);
 function calendarTask(dk,task){return {text:task.text,done:task.done||false,pri:task.pri||0,time:task.time||'',id:`task:${task.id}`,taskId:task.id,fromDayTask:true};}
 function reconcileCalendar(){
  D.calEvents ||= {};
+ for(const events of Object.values(D.calEvents))for(const ev of events)ev.id ||= uid();
  for(const [dk,events]of Object.entries(D.calEvents)){
   // Historical records are never rebuilt or cleared.
   if(dk<TK)continue;
@@ -4687,6 +4689,17 @@ function reconcileCalendar(){
  }
 }
 syncDayTasksToCalendar=reconcileCalendar;syncRecurringToCalendar=reconcileCalendar;syncSchedulesToCalendar=reconcileCalendar;syncToCalendar=reconcileCalendar;
+autoImportFromCalendar=function(){
+ const tasks=getDayTasks();let added=0;
+ for(const ev of D.calEvents[TK]||[]){
+  if(!ev.text||ev.fromSched||ev.fromRecur||ev.fromDayTask)continue;
+  ev.id ||= uid();let task=tasks.find(t=>t.calendarId===ev.id);
+  if(!task){task={id:`calendar-task:${ev.id}`,calendarId:ev.id,fromCal:true,text:ev.text,done:ev.done||false,time:ev.time||'',pri:ev.pri||0};tasks.push(task);added++;}
+  ev.taskId=task.id;ev.fromDayTask=true;
+ }
+ return added;
+};
+
 runSchedules=function(){
  const tasks=getDayTasks();
  for(const s of D.schedules){
@@ -4732,6 +4745,7 @@ const originalSave=sv;
 sv=function(){
  if(!ready)return;
  originalSave();
+ const imported=autoImportFromCalendar();if(imported)renderDayTasks();
  D.recurringTemplate=(D.days[TK]?.recur||[]).map(t=>({...t,done:false}));
  reconcileCalendar();localSave();
  showSv('local',syncConfig?'Сохранено на устройстве · ожидает отправки':'Сохранено на устройстве');
@@ -4804,12 +4818,12 @@ function installTools(){
 }
 function rolloverDate(){
  const now=new Date();now.setHours(0,0,0,0);const key=fk(now);if(key===TK)return;
- sv();today.setTime(now.getTime());TK=key;wkStart=getMon(today);migrateData();runSchedules();refreshUIFromData();document.getElementById('topDate').textContent=`${DOWF[today.getDay()]}, ${today.getDate()} ${MRGEN[today.getMonth()]} ${today.getFullYear()}`;localSave();syncNow();
+ sv();today.setTime(now.getTime());TK=key;wkStart=getMon(today);migrateData();autoImportFromCalendar();runSchedules();refreshUIFromData();document.getElementById('topDate').textContent=`${DOWF[today.getDay()]}, ${today.getDate()} ${MRGEN[today.getMonth()]} ${today.getFullYear()}`;localSave();syncNow();
 }
 async function bootRepair(){
  installTools();
  try{if(rawLocal)PC.validate(JSON.parse(rawLocal));migrateData();}catch(e){blocked=true;alert('Данные не удалось прочитать. Не очищай браузер; скачай копию. '+e.message);return;}
- ready=true;runSchedules();autoArchivePastDays();refreshUIFromData();localSave();
+ ready=true;autoImportFromCalendar();runSchedules();autoArchivePastDays();refreshUIFromData();localSave();
  document.getElementById('topDate').textContent=`${DOWF[today.getDay()]}, ${today.getDate()} ${MRGEN[today.getMonth()]} ${today.getFullYear()}`;
  showSv('local',syncConfig?'Сохранено на устройстве · проверяю облако':'Сохранено на устройстве · облако не подключено');
  await syncNow();
