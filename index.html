@@ -1526,7 +1526,14 @@ function renderMonthsView(container){
     const cell=document.createElement('div');
     cell.className='cc'+(isWknd?' wknd':'')+(isToday?' td':'');
     const dateDiv=document.createElement('div');dateDiv.className='cdate';dateDiv.textContent=d;cell.appendChild(dateDiv);
-    const evs=D.calEvents[dk]||[];
+    cell.dataset.date=dk;cell.tabIndex=0;cell.setAttribute('role','button');
+    const evs=D.calEvents[dk]||[];cell.setAttribute('aria-label',`${d} ${MRGEN[m]}, задач: ${evs.length}`);
+    cell.onclick=e=>{if(!e.target.closest('.cadd')&&matchMedia('(max-width:560px)').matches)selectMonthDate(dk);};
+    cell.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();selectMonthDate(dk);}};
+    const markers=document.createElement('div');markers.className='month-markers';
+    for(let i=0;i<Math.min(evs.length,3);i++){const dot=document.createElement('span');dot.className='month-dot';markers.append(dot);}
+    if(evs.length>3){const count=document.createElement('span');count.className='month-count';count.textContent='+'+(evs.length-3);markers.append(count);}
+    cell.append(markers);
     evs.forEach((ev,ei)=>{
       const el=document.createElement('div');el.className='cev'+(ev.done?' done':'');el.draggable=true;
       el.ondragstart=e=>{e.dataTransfer.setData('type','cal');e.dataTransfer.setData('ei',ei);e.dataTransfer.setData('fd',dk);};
@@ -1561,7 +1568,8 @@ function renderMonthsView(container){
     };
     cell.appendChild(add);grid.appendChild(cell);
   }
-  wrap.appendChild(grid);container.appendChild(wrap);
+  wrap.appendChild(grid);const agenda=document.createElement('div');agenda.className='month-agenda';wrap.append(agenda);container.appendChild(wrap);
+  const monthPrefix=`${y}-${String(m+1).padStart(2,'0')}-`;selectMonthDate(selectedMonthDate?.startsWith(monthPrefix)?selectedMonthDate:(TK.startsWith(monthPrefix)?TK:monthPrefix+'01'));
 }
 
 // keep old names as aliases so nothing breaks
@@ -2214,7 +2222,41 @@ document.getElementById('settingsModal').addEventListener('click',function(e){
 #repairTools button,#repairTools input{padding:10px;border:1px solid #c7cfbf;border-radius:7px;background:white;max-width:100%;font:inherit}
 #repairTools label{display:block;margin:8px 0} #repairTools input[type=url]{width:100%} #conflictPanel{border:2px solid #b29454;padding:12px;margin-top:10px}
 .app{grid-template-columns:minmax(0,1fr)}.app>*{min-width:0}.content,.panel,.dg>*{min-width:0}.ginp,.ss,.wti{min-width:0}
-@media(max-width:560px){.content{padding:10px}.topbar{padding:10px;flex-wrap:wrap;gap:8px}.topbar-right{flex-wrap:wrap;gap:8px}.topdate{width:100%}.tabs{max-width:100vw}.dg,.res2col,.gg{grid-template-columns:minmax(0,1fr)}.wg{grid-template-columns:repeat(2,minmax(0,1fr))}.dc{min-width:0}.sl{width:90px}.ss{width:0}.gbar{gap:8px;padding:10px}.ginp{width:0}#repairTools{margin:8px;max-width:calc(100% - 16px)}#repairTools input[type=file]{width:100%}input,textarea,select{font-size:16px!important}.tr2{grid-template-columns:14px 22px 48px minmax(60px,1fr) 16px 20px 20px 22px!important;gap:3px!important}.tr2.rec{grid-template-columns:14px 22px 48px minmax(60px,1fr) 16px 22px!important}.tt{min-width:0}.modal{max-height:90dvh;overflow:auto}}
+@media(max-width:560px){.content{padding:10px}.topbar{padding:10px;flex-wrap:wrap;gap:8px}.topbar-right{flex-wrap:wrap;gap:8px}.topdate{width:100%}.tabs{max-width:100vw}.dg,.res2col,.gg{grid-template-columns:minmax(0,1fr)}.wg{grid-template-columns:repeat(2,minmax(0,1fr))}.dc{min-width:0}.sl{width:90px}.ss{width:0}.gbar{gap:8px;padding:10px}.ginp{width:0}#repairTools{margin:8px;max-width:calc(100% - 16px)}#repairTools input[type=file]{width:100%}input,textarea,select{font-size:16px!important}#dayTasks .tr2{grid-template-columns:14px 22px 48px minmax(60px,1fr) 16px 20px 20px 22px!important;gap:3px!important}#recurTasks .tr2.rec{grid-template-columns:14px 22px 48px minmax(60px,1fr) 16px 22px!important}.tt{min-width:0}.modal{max-height:90dvh;overflow:auto}}
+</style><style>#repairTools{position:relative;z-index:20;max-width:none;margin:0;padding:0;background:#3a5045;border:0;border-radius:0;color:var(--sage-l);font-family:var(--font-b)}
+.planner-menu{position:absolute;right:24px;top:8px;transform:translateY(-100%)}
+.planner-menu>summary{list-style:none;cursor:pointer;font-size:12px;padding:7px 10px;border-radius:6px;background:#ffffff15;white-space:nowrap}
+.planner-menu>summary::-webkit-details-marker{display:none}.planner-menu>summary span{margin-left:8px;opacity:.65}
+.planner-menu-items{position:absolute;right:0;top:38px;width:240px;padding:8px;background:var(--white);border:1px solid var(--beige);border-radius:10px;box-shadow:0 12px 30px #233c2c20;display:grid;gap:3px}
+#repairTools .planner-menu-items button,#repairTools .restore-button{display:block;text-align:left;font:12px var(--font-b);color:var(--olive-d);background:none;border:0;padding:10px;border-radius:6px;margin:0;cursor:pointer}
+#repairTools .planner-menu-items button:hover,#repairTools .restore-button:hover{background:var(--gray-l)}.menu-note{display:none}
+.topbar-right{padding-right:130px}
+#connectionPanel,#phoneConnection,#conflictPanel{margin:0;padding:20px;background:var(--gray-l);color:var(--txt-m);border-bottom:1px solid var(--beige);font-size:12px;line-height:1.65}
+#connectionPanel label{max-width:520px}#connectionPanel button,#phoneConnection button,#conflictPanel button{font:12px var(--font-b);color:var(--olive-d);padding:8px 12px;border:1px solid var(--beige);background:white;border-radius:6px;margin:6px 6px 0 0}
+#overdueTasks{margin-top:14px;border-top:1px dashed var(--beige);padding-top:10px}
+#overdueTasks>summary{font:11px var(--font-b);font-weight:500;letter-spacing:.03em;color:var(--mocha);cursor:pointer;padding:5px 0 10px;list-style:none;display:flex;align-items:center;gap:8px}
+#overdueTasks>summary::before{content:'›';font-size:17px;line-height:1;transition:transform .15s}#overdueTasks[open]>summary::before{transform:rotate(90deg)}.overdue-count{padding:2px 6px;background:var(--gray-l);border-radius:12px;font-size:10px;color:var(--olive-d)}
+.overdue-row{display:grid;grid-template-columns:22px 54px minmax(0,1fr) 18px 76px;align-items:center;gap:7px;padding:9px 0;border-bottom:.5px solid var(--gray-l)}
+.overdue-row .ck{padding:0;cursor:pointer}.overdue-time{font-size:11px;color:var(--gray-d);text-align:center;font-variant-numeric:tabular-nums}
+.overdue-body{min-width:0;display:flex;flex-direction:column;gap:3px}.overdue-text{font-size:13px;color:var(--txt);line-height:1.45;overflow-wrap:anywhere}.overdue-date{font-size:10px;color:var(--gray-d)}
+.overdue-move{font:11px var(--font-b);color:var(--olive-d);background:#f0f5f1;border:1px solid #dce5dc;padding:5px 7px;border-radius:5px;cursor:pointer}.overdue-move:hover{background:var(--sage-l)}
+#todayHabits .tr2{grid-template-columns:22px minmax(0,1fr)!important;align-items:start;gap:8px;padding:8px 0}#todayHabits .ck{margin-top:2px}#todayHabits .tt{white-space:normal;overflow-wrap:anywhere;line-height:1.5;font-size:13px!important}
+.month-markers,.month-agenda{display:none}.cgr{grid-template-columns:repeat(7,minmax(0,1fr))}.cc{min-width:0}.cev{min-width:0}.cev>span:last-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:560px){
+ .topbar-right{padding-right:0;width:100%;gap:6px}.topbar{position:relative;padding:12px}.topbar .logo{font-size:22px}.topbar-right>button{font-size:11px!important;padding:6px 8px!important}.topdate{font-size:11px;margin-top:3px}
+ #repairTools{margin:0;max-width:none;padding:0}.planner-menu{right:12px;top:-100px;transform:none}.planner-menu>summary{font-size:11px;padding:7px 9px}.planner-menu-items{width:230px}
+ .overdue-row{grid-template-columns:20px 42px minmax(0,1fr) 10px 64px;gap:5px;padding:10px 0}.overdue-text{font-size:12px;line-height:1.5}.overdue-time{font-size:10px}.overdue-move{font-size:10px;padding:6px 4px}.overdue-date{font-size:9px}
+ #todayHabits .tr2{grid-template-columns:22px minmax(0,1fr)!important}#todayHabits .tt{font-size:13px!important}
+ .wg{grid-template-columns:minmax(0,1fr)}.wt{min-width:0}.wt .wti{font-size:13px!important;min-width:0}.wt .ti{font-size:11px!important;max-width:48px}
+ .cgr{gap:4px}.cc{min-height:57px;padding:5px 3px;border-radius:7px}.cc.selected-day{background:#eef3eb;border-color:var(--olive-d)}.cdate{font-size:12px!important;text-align:center;margin-bottom:7px}.cdow{font-size:9px!important;padding:5px 0}.cc .cev,.cc .cadd{display:none}
+ .month-markers{display:flex;justify-content:center;align-items:center;gap:3px;min-height:10px}.month-dot{width:4px;height:4px;border-radius:50%;background:var(--olive)}.month-count{font-size:8px;color:var(--mocha);margin-left:1px}
+ .month-agenda{display:block;margin-top:14px;padding-top:12px;border-top:1px solid var(--gray-m)}.month-agenda h3{font:500 17px var(--font-s);color:var(--olive-d);margin-bottom:8px}.month-agenda p{font-size:12px;color:var(--gray-d);padding:8px 0}
+ .agenda-row{display:grid;grid-template-columns:42px minmax(0,1fr);gap:8px;padding:9px 0;border-bottom:.5px solid var(--gray-l)}.agenda-time{font-size:10px;color:var(--mocha);padding-top:3px}.agenda-text{font-size:13px;line-height:1.5;overflow-wrap:anywhere;color:var(--txt)}.agenda-text.done{text-decoration:line-through;color:var(--gray-d)}
+ .month-agenda button{font:12px var(--font-b);color:var(--olive-d);border:1px solid var(--beige);border-radius:6px;background:var(--gray-l);padding:8px 12px;margin-top:10px}
+ #calCont .cm{width:100%}#connectionPanel,#phoneConnection,#conflictPanel{padding:14px}
+}
+
+.topbar{position:relative}.planner-menu{top:12px;transform:none}@media(max-width:560px){.planner-menu{top:12px}}
 </style><script>
 (function(root){
 'use strict';
@@ -4726,9 +4768,18 @@ function moveCalendarSource(from,to,ev){
 }
 function renderOverdue(){
  let box=document.getElementById('overdueTasks');if(!box){box=document.createElement('details');box.id='overdueTasks';document.getElementById('dayTasks').after(box);}
+ const open=box.open;
  const rows=[];for(const [dk,day]of Object.entries(D.days))if(dk<TK)for(const task of day.tasks||[])if(task.text&&!task.done)rows.push({dk,task});
- box.replaceChildren();const summary=document.createElement('summary');summary.textContent=`Незавершённые с прошлых дат: ${rows.length}`;box.append(summary);
- for(const {dk,task}of rows.sort((a,b)=>b.dk.localeCompare(a.dk))){const row=document.createElement('div');row.style.cssText='padding:8px 0;border-bottom:1px solid #ddd';const text=document.createElement('span');text.textContent=dk+' · '+task.text+' ';const move=document.createElement('button');move.textContent='На сегодня';move.onclick=()=>{D.days[dk].tasks=D.days[dk].tasks.filter(t=>t.id!==task.id);if(task.schedId){D.scheduleOverrides[`${task.schedId}:${dk}`]={skip:true};task.originalSchedId=task.schedId;delete task.schedId;delete task.fromSched;}getDayTasks().push(task);sv();refreshUIFromData();};row.append(text,move);box.append(row);}
+ box.replaceChildren();box.open=open;const summary=document.createElement('summary');summary.innerHTML=`С прошлых дней <span class="overdue-count">${rows.length}</span>`;box.append(summary);
+ for(const {dk,task}of rows.sort((a,b)=>b.dk.localeCompare(a.dk))){
+  const row=document.createElement('div');row.className='overdue-row';
+  const check=document.createElement('button');check.className='ck';check.title='Отметить выполненной';check.setAttribute('aria-label','Выполнено: '+task.text);check.onclick=()=>{task.done=true;autoArchivePastDays();sv();refreshUIFromData();};
+  const time=document.createElement('span');time.className='overdue-time';time.textContent=task.time||'—';
+  const body=document.createElement('div');body.className='overdue-body';const text=document.createElement('span');text.className='overdue-text';text.textContent=task.text;
+  const date=document.createElement('span');date.className='overdue-date';const parsed=PC.parseDate(dk);date.textContent=parsed?`${parsed.getDate()} ${MRGEN[parsed.getMonth()]}`:dk;body.append(text,date);
+  const pri=document.createElement('span');pri.className=`pd p${task.pri||0}`;
+  const move=document.createElement('button');move.className='overdue-move';move.textContent='На сегодня';move.onclick=()=>{D.days[dk].tasks=D.days[dk].tasks.filter(t=>t.id!==task.id);if(task.schedId){D.scheduleOverrides[`${task.schedId}:${dk}`]={skip:true};task.originalSchedId=task.schedId;delete task.schedId;delete task.fromSched;}getDayTasks().push(task);sv();refreshUIFromData();};row.append(check,time,body,pri,move);box.append(row);
+ }
 }
 
 const originalRenderCal=renderCal;
@@ -4791,7 +4842,7 @@ async function syncNow(){
 }
 pushCloud=syncNow;checkCloudSync=syncNow;pullCloud=async()=>null;
 flushSave=function(){if(!ready)return;localSave();clearTimeout(syncTimer);syncTimer=null;syncNow();};
-openSettings=function(){document.getElementById('connectionPanel').hidden=false;document.getElementById('serverURL').value=syncConfig?.url||defaultServer;document.getElementById('serverToken').value=syncConfig?.token||'';};
+openSettings=function(){document.querySelector('.planner-menu').open=false;document.getElementById('connectionPanel').hidden=false;document.getElementById('serverURL').value=syncConfig?.url||defaultServer;document.getElementById('serverToken').value=syncConfig?.token||'';};
 saveKey=async function(){}; // Legacy settings are never used for writes.
 async function connectServer(){
  const url=document.getElementById('serverURL').value.trim().replace(/\/$/,''),token=document.getElementById('serverToken').value.trim();
@@ -4804,17 +4855,27 @@ function showPhoneConnection(){
  if(!syncConfig){openSettings();return;}
  const link='https://midnightst-code.github.io/planer/#connect='+encodeURIComponent(syncConfig.token);
  const qr=qrcode(0,'M');qr.addData(link);qr.make();
- const panel=document.getElementById('phoneConnection');panel.hidden=false;
+ document.querySelector('.planner-menu').open=false;const panel=document.getElementById('phoneConnection');panel.hidden=false;
  panel.innerHTML='<p>Открой камеру телефона и отсканируй. QR-код даёт доступ к твоему планеру — не пересылай его другим.</p>'+qr.createSvgTag({cellSize:5,margin:4,scalable:true})+'<p>После подключения сохрани обычную ссылку на планер. Если на телефоне есть своя версия задач, сначала скачай её копию.</p><button onclick="document.getElementById(\'phoneConnection\').hidden=true">Скрыть QR-код</button>';
  panel.querySelector('svg').style.cssText='width:min(100%,300px);height:auto;background:white';panel.scrollIntoView({block:'start'});
 }
+let selectedMonthDate=null;
+function selectMonthDate(dk){
+ selectedMonthDate=dk;const panel=document.querySelector('.month-agenda');if(!panel)return;panel.replaceChildren();
+ document.querySelectorAll('.cc[data-date]').forEach(cell=>cell.classList.toggle('selected-day',cell.dataset.date===dk));
+ const date=PC.parseDate(dk);const heading=document.createElement('h3');heading.textContent=`${date.getDate()} ${MRGEN[date.getMonth()]}`;panel.append(heading);
+ const events=D.calEvents[dk]||[];
+ if(!events.length){const empty=document.createElement('p');empty.textContent='На этот день пока ничего не запланировано';panel.append(empty);}
+ for(const event of events){const row=document.createElement('div');row.className='agenda-row';const time=document.createElement('span');time.className='agenda-time';time.textContent=event.time||'—';const text=document.createElement('span');text.className='agenda-text'+(event.done?' done':'');text.textContent=event.text;row.append(time,text);panel.append(row);}
+ const add=document.createElement('button');add.textContent='+ Добавить на этот день';add.onclick=()=>document.querySelector(`.cc[data-date="${dk}"] .cadd`).click();panel.append(add);
+}
 function installTools(){
  const box=document.createElement('section');box.id='repairTools';box.innerHTML=`
- <div style="display:flex;gap:8px;flex-wrap:wrap"><button onclick="document.getElementById('tasksCard').scrollIntoView({block:'start'})">К задачам сегодня</button><button onclick="setCalView('week');document.getElementById('calTitle').scrollIntoView({block:'start'})">Календарь недели</button><button onclick="exportPlanner()">Скачать копию всех данных</button><label><input type="file" accept=".json" id="restoreFile">Восстановить копию</label><button onclick="openSettings()">Подключение устройств</button><button onclick="showPhoneConnection()">Подключить телефон</button><button onclick="syncNow()">Обновить</button></div>
+ <details class="planner-menu"><summary>Инструменты <span>⌄</span></summary><div class="planner-menu-items"><button onclick="document.getElementById('tasksCard').scrollIntoView({block:'start'})">К задачам сегодня</button><button onclick="setCalView('week');document.getElementById('calTitle').scrollIntoView({block:'start'})">Календарь недели</button><button onclick="exportPlanner()">Скачать копию всех данных</button><label class="restore-button">Восстановить копию<input type="file" accept=".json" id="restoreFile" hidden></label><button onclick="openSettings()">Подключение устройств</button><button onclick="showPhoneConnection()">Подключить телефон</button><button onclick="syncNow()">Обновить</button></div><p class="menu-note">Резервные копии и подключение устройств</p></details>
  <div id="phoneConnection" hidden></div><div id="connectionPanel" hidden><p>Подключи один и тот же сервер на компьютере и телефоне. Старые ключи JSONBin здесь не используются.</p><label>Адрес сервера <input id="serverURL" type="url" placeholder="https://…workers.dev"></label><label>Код подключения <input id="serverToken" type="password" autocomplete="off"></label><button onclick="connectServer()">Подключить</button><p id="connectionStatus">До подключения данные сохраняются только на этом устройстве.</p></div>
  <div id="conflictPanel" hidden><p></p><button onclick="resolveConflict(true)">Использовать версию облака</button><button onclick="resolveConflict(false)">Использовать версию этого устройства</button><button onclick="exportPlanner()">Сначала скачать обе версии</button></div>
- <p style="font-size:12px">Назначенные задачи остаются на своих датах. Перенос — вручную. Ежемесячные задачи 29–31-го пропускают месяцы без такого числа. Напоминания работают при открытой странице.</p>`;
- document.body.prepend(box);document.getElementById('restoreFile').onchange=e=>{if(e.target.files[0])importPlanner(e.target.files[0]);};
+ <p class="service-note" hidden>Назначенные задачи остаются на своих датах. Перенос — вручную. Ежемесячные задачи 29–31-го пропускают месяцы без такого числа. Напоминания работают при открытой странице.</p>`;
+ document.querySelector('.topbar').after(box);document.querySelector('.topbar').append(box.querySelector('.planner-menu'));document.getElementById('restoreFile').onchange=e=>{if(e.target.files[0])importPlanner(e.target.files[0]);};
 }
 function rolloverDate(){
  const now=new Date();now.setHours(0,0,0,0);const key=fk(now);if(key===TK)return;
