@@ -4766,25 +4766,31 @@ function moveCalendarSource(from,to,ev){
  if(ev.schedId){D.scheduleOverrides[`${ev.schedId}:${from}`]={skip:true};ev.fromSched=false;delete ev.schedId;ev.id=uid();}
  if(ev.recurId){D.recurringOverrides[`${ev.recurId}:${from}`]={skip:true};ev.fromRecur=false;delete ev.recurId;delete ev._repairRecur;ev.id=uid();}
 }
-function renderOverdue(){
- let box=document.getElementById('overdueTasks');if(!box){box=document.createElement('details');box.id='overdueTasks';document.getElementById('dayTasks').after(box);}
- const open=box.open;
- const rows=[];for(const [dk,day]of Object.entries(D.days))if(dk<TK)for(const task of day.tasks||[])if(task.text&&!task.done)rows.push({dk,task});
- box.replaceChildren();box.open=open;const summary=document.createElement('summary');summary.innerHTML=`С прошлых дней <span class="overdue-count">${rows.length}</span>`;box.append(summary);
- for(const {dk,task}of rows.sort((a,b)=>b.dk.localeCompare(a.dk))){
-  const row=document.createElement('div');row.className='overdue-row';
-  const check=document.createElement('button');check.className='ck';check.title='Отметить выполненной';check.setAttribute('aria-label','Выполнено: '+task.text);check.onclick=()=>{task.done=true;autoArchivePastDays();sv();refreshUIFromData();};
-  const time=document.createElement('span');time.className='overdue-time';time.textContent=task.time||'—';
-  const body=document.createElement('div');body.className='overdue-body';const text=document.createElement('span');text.className='overdue-text';text.textContent=task.text;
-  const date=document.createElement('span');date.className='overdue-date';const parsed=PC.parseDate(dk);date.textContent=parsed?`${parsed.getDate()} ${MRGEN[parsed.getMonth()]}`:dk;body.append(text,date);
-  const pri=document.createElement('span');pri.className=`pd p${task.pri||0}`;
-  const move=document.createElement('button');move.className='overdue-move';move.textContent='На сегодня';move.onclick=()=>{D.days[dk].tasks=D.days[dk].tasks.filter(t=>t.id!==task.id);if(task.schedId){D.scheduleOverrides[`${task.schedId}:${dk}`]={skip:true};task.originalSchedId=task.schedId;delete task.schedId;delete task.fromSched;}getDayTasks().push(task);sv();refreshUIFromData();};row.append(check,time,body,pri,move);box.append(row);
+function isDateBoundTask(task){return !!(task.fromCal||task.calendarId||task.fromSched||task.schedId||task.fixedDate);}
+function carryUnfinishedTasks(){
+ autoArchivePastDays();
+ const current=getDayTasks();
+ for(const dk of Object.keys(D.days).sort()){
+  if(dk>=TK)continue;
+  const day=D.days[dk];
+  day.tasks=(day.tasks||[]).filter(task=>{
+   if(!task.text||task.done||isDateBoundTask(task))return true;
+   if(!current.some(t=>t.id===task.id))current.push(task);
+   return false;
+  });
+ }
+ // Remove only proven projections of floating tasks from old dates.
+ const floating=new Set();
+ for(const day of Object.values(D.days))for(const t of day.tasks||[])if(!isDateBoundTask(t))floating.add(t.id);
+ for(const [dk,events]of Object.entries(D.calEvents))if(dk<TK){
+  D.calEvents[dk]=events.filter(ev=>!(ev.fromDayTask&&ev.taskId&&floating.has(ev.taskId)));
+  if(!D.calEvents[dk].length)delete D.calEvents[dk];
  }
 }
+function renderOverdue(){document.getElementById('overdueTasks')?.remove();}
 
-const originalRenderCal=renderCal;
-renderCal=function(){reconcileCalendar();originalRenderCal();};
 function refreshUIFromData(){
+ carryUnfinishedTasks();
  const day=D.days[TK]||{};
  for(const id of ['q1','q2','q3','e1','e2','e3','e4','win1','win2','win3','sMood','sEnergy','sSleep']){const el=document.getElementById(id);if(el)el.value=day[id]??(id.startsWith('s')?'5':'');}
  document.getElementById('weekGoal').value=D.weekGoal||'';
@@ -4878,7 +4884,7 @@ function installTools(){
  document.querySelector('.topbar').after(box);document.querySelector('.topbar').append(box.querySelector('.planner-menu'));document.getElementById('restoreFile').onchange=e=>{if(e.target.files[0])importPlanner(e.target.files[0]);};
 }
 function rolloverDate(){
- const now=new Date();now.setHours(0,0,0,0);const key=fk(now);if(key===TK)return;
+ const now=new Date();now.setHours(0,0,0,0);const key=fk(now);if(key===TK){syncNow();return;}
  sv();today.setTime(now.getTime());TK=key;wkStart=getMon(today);migrateData();autoImportFromCalendar();runSchedules();refreshUIFromData();document.getElementById('topDate').textContent=`${DOWF[today.getDay()]}, ${today.getDate()} ${MRGEN[today.getMonth()]} ${today.getFullYear()}`;localSave();syncNow();
 }
 async function bootRepair(){
