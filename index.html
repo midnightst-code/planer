@@ -1028,7 +1028,7 @@ function renderRecur(){
     ti2.title='Время задачи (например: 14:30) для уведомлений';
     applyTimeStyle(ti2, r.time);
     ti2.oninput=()=>{r.time=ti2.value;applyTimeStyle(ti2, r.time);sv();};
-    const inp=document.createElement('input');inp.className='tt'+(r.done?' done':'');
+    const inp=createTaskText();inp.className='tt'+(r.done?' done':'');
     inp.value=r.text||'';inp.placeholder='Повторяющаяся задача...';
     inp.oninput=()=>{r.text=inp.value;sv();syncRecurringToCalendar();};
     const pd=document.createElement('div');pd.className=`pd p${r.pri||0}`;pd.title='Приоритет';
@@ -1136,7 +1136,7 @@ function renderDayTasks(){
     ti.onblur=()=>{t.time=ti.value;applyTimeStyle(ti, t.time);sv();flushSave();};
     ti.onchange=()=>{t.time=ti.value;applyTimeStyle(ti, t.time);sv();flushSave();};
 
-    const inp=document.createElement('input');inp.className='tt'+(t.done?' done':'');inp.value=t.text||'';inp.placeholder='Задача...';
+    const inp=createTaskText();inp.className='tt'+(t.done?' done':'');inp.value=t.text||'';inp.placeholder='Задача...';
     inp.oninput=()=>{t.text=inp.value;sv();};
     inp.onblur=()=>{t.text=inp.value;sv();flushSave();};
     inp.onchange=()=>{t.text=inp.value;sv();flushSave();};
@@ -1480,7 +1480,7 @@ function renderWeekView(container){
       ti.onblur=()=>{ ev.time=ti.value;updateCalendarSource(dk,ev); applyTimeStyle(ti, ev.time); sv(); flushSave(); };
       ti.onchange=()=>{ ev.time=ti.value;updateCalendarSource(dk,ev); applyTimeStyle(ti, ev.time); sv(); flushSave(); };
 
-      const inp=document.createElement('input');inp.className='wti';inp.value=ev.text||'';inp.placeholder='Задача...';
+      const inp=createTaskText();inp.className='wti';inp.value=ev.text||'';inp.placeholder='Задача...';
       inp.oninput=()=>{
         const oldText = ev.text;
         ev.text=inp.value;updateCalendarSource(dk,ev);
@@ -2255,6 +2255,17 @@ document.getElementById('settingsModal').addEventListener('click',function(e){
 
 .topbar{position:relative}.planner-menu{top:12px;transform:none}@media(max-width:560px){.planner-menu{top:12px}}
 .calendar-move{flex-shrink:0;border:0;border-radius:4px;background:transparent;color:var(--olive-d);font:14px var(--font-b);padding:2px 5px;cursor:pointer}.calendar-move:hover{background:var(--beige)}.agenda-row .calendar-move{margin:0;padding:6px 10px}.dct.over{outline:2px solid var(--olive-d)}
+/* Task names expand with their content instead of clipping a single line. */
+textarea.tt,textarea.wti{display:block;box-sizing:border-box;resize:none;overflow:hidden;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.45;min-height:1.45em;height:auto;padding:2px 0;margin:0;align-self:center;border:0;border-radius:0;background:transparent;font-family:var(--font-b);color:var(--txt);width:100%;min-width:0}
+.cev{align-items:flex-start;white-space:normal;height:auto}.cev>span:last-of-type{min-width:0;white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere;line-height:1.4}.wt{align-items:center}.wt textarea.wti{flex:1;min-width:0}.cc{height:auto}.agenda-text{white-space:normal;overflow-wrap:anywhere;line-height:1.45}
+@media(max-width:560px){
+ #dayTasks textarea.tt,#recurTasks textarea.tt,.wt textarea.wti{font-size:14px!important;line-height:1.45}
+ #dayTasks textarea.tt:focus,#recurTasks textarea.tt:focus,.wt textarea.wti:focus{font-size:16px!important}
+ #dayTasks .tr2{grid-template-columns:10px 20px 43px minmax(0,1fr) 12px 18px 18px 14px!important;gap:3px!important;align-items:center}
+ #recurTasks .tr2.rec{grid-template-columns:10px 20px 43px minmax(0,1fr) 12px 14px!important;gap:3px!important}
+ #dayTasks .ti,#recurTasks .ti{font-size:12px!important;width:43px;min-width:0;padding:4px 1px}
+ .agenda-text{font-size:13px}.agenda-time{font-size:11px}
+}
 </style><script>
 (function(root){
 'use strict';
@@ -4802,6 +4813,17 @@ function carryUnfinishedTasks(){
 }
 function renderOverdue(){document.getElementById('overdueTasks')?.remove();}
 
+function fitTaskText(field){
+ if(!field.isConnected)return;field.style.height='auto';field.style.height=field.scrollHeight+'px';
+}
+function createTaskText(){
+ const field=document.createElement('textarea');field.rows=1;field.setAttribute('aria-label','Название задачи');
+ field.addEventListener('input',()=>fitTaskText(field));
+ field.addEventListener('focus',()=>requestAnimationFrame(()=>fitTaskText(field)));
+ field.addEventListener('blur',()=>requestAnimationFrame(()=>fitTaskText(field)));
+ requestAnimationFrame(()=>fitTaskText(field));return field;
+}
+window.addEventListener('resize',()=>document.querySelectorAll('textarea.tt,textarea.wti').forEach(fitTaskText));
 function refreshUIFromData(){
  carryUnfinishedTasks();
  const day=D.days[TK]||{};
