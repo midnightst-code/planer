@@ -579,6 +579,7 @@ body{font-family:var(--font-b);background:var(--gray-l);color:var(--txt);font-si
     <div style="background:var(--gray-l);border-radius:10px;padding:14px;margin-bottom:16px;">
       <div style="font-size:12px;font-weight:500;color:var(--olive-d);margin-bottom:6px;">Статус браузерных уведомлений:</div>
       <div id="notifPermStatus" style="font-size:12px;margin-bottom:8px;font-weight:500;"></div>
+      <p style="font-size:12px;line-height:1.5;margin:8px 0;color:var(--mocha)">Для всплывающих окон на Mac: Системные настройки → Уведомления → Google Chrome → Разрешить уведомления, стиль «Предупреждения» или «Баннеры» и показ в Центре уведомлений. Планер должен оставаться открытым во вкладке; при закрытой вкладке или спящем компьютере напоминания не гарантируются.</p>
       <button id="btnReqNotif" onclick="enableNotifications()" class="btn btn-p" style="width:100%;text-align:center;">Включить уведомления</button>
       <button onclick="testNotification()" class="btn" style="width:100%;margin-top:8px;background:var(--olive-d);color:#fff;border:none;border-radius:6px;padding:8px;cursor:pointer;font-size:12px;font-family:var(--font-b);">🧪 Проверить уведомление (Тест)</button>
     </div>
@@ -702,7 +703,7 @@ function updateNotifUI(){
     return;
   }
   if(Notification.permission === 'granted'){
-    if(st){ st.textContent = '✓ Уведомления включены и активны!'; st.style.color = 'var(--olive-d)'; }
+    if(st){ st.textContent = '✓ Сайту разрешены системные уведомления. Если баннера нет, проверь уведомления Google Chrome в настройках macOS.'; st.style.color = 'var(--olive-d)'; }
     if(btn){ btn.textContent = '✓ Уведомления разрешены'; btn.style.opacity = '0.7'; }
   } else if(Notification.permission === 'denied'){
     if(st){ st.textContent = '⚠ Уведомления заблокированы в настройках браузера.'; st.style.color = '#c62828'; }
@@ -752,16 +753,18 @@ function playNotifSound(){
 }
 
 function testNotification(){
-  playNotifSound();
-  showSystemNotif('🔔 Тест уведомления', 'Если вы видите это окно и слышите звук, уведомления работают отлично!');
+  if(!('Notification' in window)||Notification.permission!=='granted'){enableNotifications();return;}
+  showSystemNotif('Мой планер · проверка', 'Это системное напоминание. Нажми на него, чтобы вернуться к задачам.');
 }
 
 function showSystemNotif(title, body){
   playNotifSound();
   if('Notification' in window && Notification.permission === 'granted'){
     try {
-      new Notification(title, { body: body, icon: 'favicon.ico' });
-    } catch(e){}
+      const notification=new Notification(title, {body,tag:'planner-'+title+'-'+body,requireInteraction:true});
+      notification.onclick=()=>{window.focus();document.getElementById('tasksCard')?.scrollIntoView({block:'start'});notification.close();};
+      notification.onerror=()=>{const status=document.getElementById('notifPermStatus');if(status)status.textContent='Системное уведомление не показано. Проверь: настройки macOS → Уведомления → Google Chrome.';};
+    } catch(e){const status=document.getElementById('notifPermStatus');if(status)status.textContent='Браузер не смог показать системное уведомление. Проверь разрешения Chrome и macOS.';}
   }
   const msg = document.getElementById('autoMsg');
   if(msg){
@@ -1493,7 +1496,7 @@ function renderWeekView(container){
       const ck=document.createElement('div');ck.className='ck'+(ev.done?' on':'');
       ck.style.cssText='width:14px;height:14px;flex-shrink:0;';
       ck.onclick=()=>{ev.done=!ev.done;updateCalendarSource(dk,ev);sv();refreshUIFromData();};
-      const del=document.createElement('span');del.style.cssText='font-size:12px;color:var(--gray-d);cursor:pointer;margin-left:2px;flex-shrink:0;';del.textContent='×';
+      const del=document.createElement('span');del.className='calendar-delete';del.style.cssText='font-size:12px;color:var(--gray-d);cursor:pointer;margin-left:2px;flex-shrink:0;';del.textContent='×';
       del.onclick=()=>{deleteCalendarSource(dk,ev);D.calEvents[dk].splice(ei,1);sv();refreshUIFromData();};
       el.append(dot,ti,inp,ck,calendarMoveButton(dk,ev),del);body.appendChild(el);
     });
@@ -2266,6 +2269,13 @@ textarea.tt,textarea.wti{display:block;box-sizing:border-box;resize:none;overflo
  #dayTasks .ti,#recurTasks .ti{font-size:12px!important;width:43px;min-width:0;padding:4px 1px}
  .agenda-text{font-size:13px}.agenda-time{font-size:11px}
 }
+/* Match the compact month cards without squeezing the task name between controls. */
+.wt{background:var(--sage-l);border:0;padding:4px 5px;gap:3px;min-height:28px;align-items:flex-start;position:relative}
+.wt .wtd{margin-top:5px}.wt textarea.wti{font-size:11px;line-height:1.4;padding:0;flex:1;width:0;min-width:0}
+.wt .ti{font-size:10px!important;line-height:1.4;width:34px;min-width:34px;padding:1px 2px;margin-top:1px}
+.wt .ck,.wt .calendar-delete{display:none}.wt:hover .ck,.wt:focus-within .ck,.wt:hover .calendar-delete,.wt:focus-within .calendar-delete{display:block}
+.wt .calendar-move{font-size:14px;padding:0 2px}.dct{padding:5px;min-height:74px}.dch{padding:5px 8px}.dch .dn{font-size:15px}.wg{align-items:start}.dc{border-radius:6px}
+@media(max-width:560px){.wt textarea.wti{font-size:12px!important}.wt textarea.wti:focus{font-size:16px!important}.wt .ti{font-size:10px!important;max-width:34px}.wt{padding:5px;min-height:28px}}
 </style><script>
 (function(root){
 'use strict';
