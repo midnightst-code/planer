@@ -4661,12 +4661,15 @@ if(connectToken&&/^[A-Za-z0-9_-]{43}$/.test(connectToken)){
  const next={url:defaultServer,token:connectToken};
  if(!PC.same(syncConfig,next)){localStorage.removeItem('plannerSyncBase');}
  syncConfig=next;localStorage.setItem('plannerConnection',JSON.stringify(next));
- history.replaceState(null,'',location.pathname+location.search);
+ // Keep the private pairing fragment in a saved Home Screen launch URL.
+ // Fragments are not transmitted to GitHub or the sync server.
+ history.replaceState(null,'',location.pathname+location.search+'#connect='+encodeURIComponent(connectToken));
 }
 let baseState=readSetting('plannerSyncBase');
 let revision=baseState?.revision??null;
 let syncing=false,blocked=false,ready=false;
-let retryMs=2000;
+let retryMs=2000,lastEditAt=0;
+document.addEventListener('input',()=>{lastEditAt=Date.now();},true);
 function content(d){
  const x=PC.clone(d);delete x._savedAt;delete x._plannerSync;
  for(const [dk,events]of Object.entries(x.calEvents||{})){
@@ -4856,6 +4859,34 @@ async function api(method='GET',body){
  const r=await fetch(syncConfig.url+'/api/state',{method,headers:{'Authorization':'Bearer '+syncConfig.token,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(20000),cache:'no-store'});
  const j=await r.json();if(!r.ok){const e=new Error(j.error||`Ошибка ${r.status}`);e.status=r.status;e.result=j;throw e;}if(!j.empty)PC.validate(j.data);return j;
 }
+// Compare floating tasks on the same date on all three devices' snapshots.
+// Automatic rollover is a projection, not a competing user edit.
+function mergeSnapshot(data){
+ const copy=content(data);copy.days[TK] ||= {};copy.days[TK].tasks ||= [];
+ const floating=[];const ids=new Set();
+ for(const dk of Object.keys(copy.days).sort()){
+  if(dk>TK)continue;const day=copy.days[dk];if(!day.tasks)continue;
+  day.tasks=day.tasks.filter(task=>{
+   if(isDateBoundTask(task))return true;
+   if(task.done)task.completedDate ||= dk;
+   floating.push(task);ids.add(task.id);return false;
+  });
+ }
+ copy.days[TK].tasks.push(...floating);
+ for(const [dk,events]of Object.entries(copy.calEvents)){
+  copy.calEvents[dk]=events.filter(e=>!(e.fromDayTask&&ids.has(e.taskId)));
+  if(!copy.calEvents[dk].length)delete copy.calEvents[dk];
+ }
+ return copy;
+}
+function restoreCompletedDates(data){
+ const tasks=data.days[TK]?.tasks;if(!tasks)return data;
+ data.days[TK].tasks=tasks.filter(task=>{
+  if(!task.done||!task.completedDate||task.completedDate>=TK||isDateBoundTask(task))return true;
+  data.days[task.completedDate] ||= {};data.days[task.completedDate].tasks ||= [];
+  data.days[task.completedDate].tasks.push(task);return false;
+ });return data;
+}
 function rememberBase(state){baseState={revision:state.revision,data:content(state.data)};revision=state.revision;localStorage.setItem('plannerSyncBase',JSON.stringify(baseState));}
 function showConflict(remote,paths){
  blocked=true;stash('Локальная версия при конфликте');stash('Версия другого устройства',remote.data);
@@ -4864,7 +4895,8 @@ function showConflict(remote,paths){
 }
 async function resolveConflict(useRemote){const panel=document.getElementById('conflictPanel');const remote=panel.remote;if(!remote)return;stash('Перед выбором версии');if(useRemote)D=PC.clone(remote.data);rememberBase(remote);migrateData();blocked=false;panel.hidden=true;refreshUIFromData();localSave();await syncNow();}
 async function syncNow(){
- if(!ready||!syncConfig||syncing||blocked)return;
+ if(!ready||syncing||blocked)return;
+ if(!syncConfig){showSv('error','Это устройство не подключено · открой «Подключение устройств»');return;}
  if(!navigator.onLine){showSv('local','Нет сети · сохранено на устройстве');return;}
  syncing=true;
  try{
@@ -4873,9 +4905,10 @@ async function syncNow(){
   if(!baseState && rawLocal){try{if(PC.same(content(JSON.parse(rawLocal)),content(remote.data)))rememberBase(remote);}catch{}}
   if(!baseState && !rawLocal){D=PC.clone(remote.data);rememberBase(remote);migrateData();refreshUIFromData();localSave();}
   if(!baseState){showConflict(remote,['Первое подключение: сравниваем данные устройства и облака']);return;}
-  const merged=PC.merge(baseState.data,content(D),content(remote.data));
+  const merged=PC.merge(mergeSnapshot(baseState.data),mergeSnapshot(D),mergeSnapshot(remote.data));
   if(merged.conflicts.length){showConflict(remote,merged.conflicts);return;}
-  if(document.activeElement?.matches('input,textarea,select')&&!PC.same(content(D),merged.value))return;
+  restoreCompletedDates(merged.value);
+  if(document.activeElement?.matches('input,textarea,select')&&Date.now()-lastEditAt<2000&&!PC.same(content(D),merged.value)){setTimeout(syncNow,2500);return;}
   if(!PC.same(content(D),merged.value)){stash('Перед объединением');D=merged.value;migrateData();refreshUIFromData();localSave();}
   rememberBase(remote);
   const sent=content(D);
@@ -4907,7 +4940,7 @@ function showPhoneConnection(){
  const link='https://midnightst-code.github.io/planer/#connect='+encodeURIComponent(syncConfig.token);
  const qr=qrcode(0,'M');qr.addData(link);qr.make();
  document.querySelector('.planner-menu').open=false;const panel=document.getElementById('phoneConnection');panel.hidden=false;
- panel.innerHTML='<p>Открой камеру телефона и отсканируй. QR-код даёт доступ к твоему планеру — не пересылай его другим.</p>'+qr.createSvgTag({cellSize:5,margin:4,scalable:true})+'<p>После подключения сохрани обычную ссылку на планер. Если на телефоне есть своя версия задач, сначала скачай её копию.</p><button onclick="document.getElementById(\'phoneConnection\').hidden=true">Скрыть QR-код</button>';
+ panel.innerHTML='<p>Открой камеру телефона и отсканируй. QR-код даёт доступ к твоему планеру — не пересылай его другим.</p>'+qr.createSvgTag({cellSize:5,margin:4,scalable:true})+'<p>Если добавляешь планер на главный экран телефона: после добавления открой его значком и проверь надпись о синхронизации. Сохраняй ссылку, открытую именно через этот QR-код: она содержит закрытый код подключения после # и позволит значку восстановить подключение. Не пересылай её другим. Safari и отдельное окно могут хранить подключение отдельно. При необходимости открой «Подключение устройств» в окне с главного экрана и введи тот же код. Если на телефоне есть свои задачи, сначала скачай их копию.</p><button onclick="document.getElementById(\'phoneConnection\').hidden=true">Скрыть QR-код</button>';
  panel.querySelector('svg').style.cssText='width:min(100%,300px);height:auto;background:white';panel.scrollIntoView({block:'start'});
 }
 let selectedMonthDate=null;
@@ -4920,6 +4953,10 @@ function selectMonthDate(dk){
  for(const event of events){const row=document.createElement('div');row.className='agenda-row';const time=document.createElement('span');time.className='agenda-time';time.textContent=event.time||'—';const text=document.createElement('span');text.className='agenda-text'+(event.done?' done':'');text.textContent=event.text;row.append(time,text,calendarMoveButton(dk,event));panel.append(row);}
  const add=document.createElement('button');add.textContent='+ Добавить на этот день';add.onclick=()=>document.querySelector(`.cc[data-date="${dk}"] .cadd`).click();panel.append(add);
 }
+const originalShowSv=showSv;
+showSv=function(cls,text){originalShowSv(cls,text);const indicator=document.getElementById('sv');clearTimeout(indicator._t);indicator.classList.add('show');};
+function resumePlanner(){rolloverDate();syncNow();}
+window.addEventListener('pageshow',resumePlanner);
 function installTools(){
  const box=document.createElement('section');box.id='repairTools';box.innerHTML=`
  <details class="planner-menu"><summary>Инструменты <span>⌄</span></summary><div class="planner-menu-items"><button onclick="document.getElementById('tasksCard').scrollIntoView({block:'start'})">К задачам сегодня</button><button onclick="setCalView('week');document.getElementById('calTitle').scrollIntoView({block:'start'})">Календарь недели</button><button onclick="exportPlanner()">Скачать копию всех данных</button><label class="restore-button">Восстановить копию<input type="file" accept=".json" id="restoreFile" hidden></label><button onclick="openSettings()">Подключение устройств</button><button onclick="showPhoneConnection()">Подключить телефон</button><button onclick="syncNow()">Обновить</button></div><p class="menu-note">Резервные копии и подключение устройств</p></details>
